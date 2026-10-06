@@ -1,0 +1,26 @@
+# Local (no se suben al repo)
+doc/
+AGENTS.local.md
+
+# Node / NestJS
+node_modules/
+dist/
+coverage/
+*.log
+npm-debug.log*
+
+# Entorno (secretos)
+.env
+.env.local
+.env.*.local
+
+# Sistema / editores
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+
+# Build / cache
+.tsbuildinfo
+.nest/
