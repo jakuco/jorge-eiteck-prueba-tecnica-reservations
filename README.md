@@ -119,6 +119,27 @@ src/
 - **Por qué:** setup mínimo para Node + Postgres, plan free alcanza para
   evaluación.
 
+### D4 — RBAC simplificado con hooks de extensibilidad (M:N)
+
+- **Fecha:** 2026-10-08
+- **Contexto:** el enunciado menciona "consultar los recursos que puede
+  utilizar" pero no define la granularidad ni exige un sistema RBAC completo.
+- **Decisión:** tabla `roles` con FK desde `users.role_id` (1:N). Tabla
+  puente `role_type_access` para el control de acceso por tipo (M:N).
+  Permisos efectivos viven en guards, no en filas de DB.
+- **Por qué:**
+  - El spec solo pide 2 roles (`admin`, `user`) con permisos diferenciados.
+  - 1:N entre user y role matchea el spec literal ("una persona que utiliza
+    el sistema").
+  - M:N entre role y type_resource permite reglas por categoría sin
+    agregar columnas `text[]` ni tablas puente para cada permiso.
+  - Menor superficie de cambios, más rápido de implementar.
+- **Extensibilidad:** si en el futuro se necesitan permisos granulares por
+  acción, se agregan tablas `permissions` y `role_permissions` que apuntan
+  a `roles.id`. La FK `users.role_id` no se toca.
+- **Trade-off aceptado:** cambiar permisos requiere redeploy (vs INSERT en DB).
+  En 3 días con roles congelados, aceptable.
+
 ## Supuestos y trade-offs
 
 - **Refresh tokens**: simplificación inicial — solo access token con vida
