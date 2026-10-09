@@ -151,6 +151,18 @@ src/
 
 - **Refresh tokens**: simplificación inicial — solo access token con vida
   moderada (1 h). Renovación de sesión queda como mejora documentada.
+- **Autorización con `roleId` en el JWT**: el token es stateless y lleva
+  `roleId`/`roleName`; `JwtStrategy.validate()` no revalida contra la DB. El
+  *enforcement* de tipos sí es data-driven en cada request (lee
+  `role_type_access` con ese `roleId`), pero **revocar un tipo, cambiar de rol
+  o desactivar al usuario no surte efecto hasta que expire el token (≤1 h)**.
+  Mitigación propuesta: revalidar rol/usuario en `validate()` o token-version.
+- **Dos planos de autorización**: `role_type_access` gobierna el **plano de
+  datos** (qué tipos de recurso se ven/reservan) de forma 100% data-driven. Los
+  endpoints de administración (`POST /resources`, `PATCH /:id/status`,
+  `GET /users`) siguen usando `@Roles('admin')` como **plano de gestión**; un
+  RBAC por permisos de acción (`role_permissions`) queda documentado como
+  extensión.
 - **Observabilidad**: solo pino con redacción. Sin tracing ni métricas
   avanzadas.
 - **CI**: pendiente de justificación; se agrega si entra en el cronograma.
