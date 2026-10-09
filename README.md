@@ -395,6 +395,29 @@ reuso con revocación total y logout).
    (`onConflictDoNothing`).
 5. Railway detecta `Dockerfile` y construye.
 
+### Seed manual en el servicio desplegado
+
+Si la base del servicio queda sin datos de prueba (por ejemplo, cuando el
+Release Command solo corrió las migraciones), se ejecuta el seed a mano desde
+la consola del contenedor en Railway:
+
+```bash
+/app # npm run db:seed
+
+> eiteck-resource-reservations@0.1.0 db:seed
+> node dist/data/seeds/initial-seed.js
+
+[seed] Insertando roles...
+[seed] Insertando type_resources...
+[seed] Reconstruyendo role_type_access (matriz de permisos)...
+[seed] Insertando usuarios de prueba...
+[seed] Insertando recursos de ejemplo...
+[seed] Listo ✓
+```
+
+El seed es idempotente (`onConflictDoNothing` + reconstrucción de
+`role_type_access`), por lo que puede ejecutarse nuevamente sin duplicar datos.
+
 ### Servicio desplegado
 
 - **API:** <https://jorge-eiteck-prueba-tecnica-reservations-production.up.railway.app>
