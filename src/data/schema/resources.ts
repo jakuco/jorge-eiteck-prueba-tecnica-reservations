@@ -1,4 +1,4 @@
-import { pgTable, serial, varchar, text, integer, timestamp } from 'drizzle-orm/pg-core';
+import { pgTable, serial, varchar, text, integer, timestamp, check } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 import { typeResources } from './type_resources';
 
@@ -15,9 +15,9 @@ export const resources = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
-  (table) => ({
-    statusCheck: sql`CHECK (${table.status} IN ('enabled', 'disabled'))`,
-  }),
+  (table) => [
+    check('resources_status_check', sql`${table.status} IN ('enabled', 'disabled')`),
+  ],
 );
 
 export type ResourceRow = typeof resources.$inferSelect;

@@ -1,4 +1,4 @@
-import { pgTable, serial, integer, timestamp, varchar } from 'drizzle-orm/pg-core';
+import { pgTable, serial, timestamp, varchar, integer, check } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 import { resources } from './resources';
 import { users } from './users';
@@ -19,14 +19,18 @@ export const reservations = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
-  (table) => ({
-    rangeCheck: sql`CHECK (${table.endTime} > ${table.startTime})`,
-    statusCheck: sql`CHECK (${table.status} IN ('confirmed', 'cancelled'))`,
-    excludeOverlap: sql`EXCLUDE USING gist (
-      ${table.resourceId} WITH =,
-      tstzrange(${table.startTime}, ${table.endTime}, '[)') WITH &&
-    ) WHERE (${table.status} = 'confirmed')`,
-  }),
+  (table) => [
+    check('reservations_range_check', sql`${table.endTime} > ${table.startTime}`),
+    check(
+      'reservations_status_check',
+      sql`${table.status} IN ('confirmed', 'cancelled')`,
+    ),
+    sql`ALTER TABLE reservations ADD CONSTRAINT reservations_no_overlap
+      EXCLUDE USING gist (
+        ${table.resourceId} WITH =,
+        tstzrange(${table.startTime}, ${table.endTime}, '[)') WITH &&
+      ) WHERE (${table.status} = 'confirmed')`,
+  ],
 );
 
 export type ReservationRow = typeof reservations.$inferSelect;
