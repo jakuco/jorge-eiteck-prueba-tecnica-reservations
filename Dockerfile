@@ -21,4 +21,6 @@ COPY --from=builder /app/package.json ./package.json
 EXPOSE 3000
 USER node
 
-CMD ["node", "dist/main.js"]
+# Al arrancar: aplica migraciones y seed (idempotente) y luego levanta la API.
+# `exec` hace que node sea PID 1 para recibir señales (SIGTERM) correctamente.
+CMD ["sh", "-c", "node scripts/run-migrations.js && node dist/data/seeds/initial-seed.js && exec node dist/main.js"]

@@ -384,39 +384,44 @@ reuso con revocación total y logout).
    - `JWT_SECRET` → valor fuerte (≥32 chars)
    - `JWT_EXPIRES_IN` → `15m` (opcional; access token corto)
    - `REFRESH_TOKEN_TTL_DAYS` → `7` (opcional)
-4. **Configurar Release Command** (Settings → Deploy → Release Command):
+4. Railway detecta `Dockerfile` y construye. **No hace falta configurar
+   migraciones ni seed**: el contenedor los aplica solo al arrancar (ver abajo).
 
-   ```bash
-   npm run db:migrate && npm run db:seed
-   ```
+### Migraciones y seed automáticos
 
-   Esto corre antes de cada deploy y aplica las migraciones `0000`–`0002`. Si
-   solo es necesario migrar, usar `npm run db:migrate`; el seed es idempotente
-   (`onConflictDoNothing`).
-5. Railway detecta `Dockerfile` y construye.
+El `CMD` del `Dockerfile` ejecuta, en cada arranque del contenedor:
 
-### Seed manual en el servicio desplegado
+```dockerfile
+CMD ["sh", "-c", "node scripts/run-migrations.js && node dist/data/seeds/initial-seed.js && exec node dist/main.js"]
+```
 
-Si la base del servicio queda sin datos de prueba (por ejemplo, cuando el
-Release Command solo corrió las migraciones), se ejecuta el seed a mano desde
-la consola del contenedor en Railway:
+- `node scripts/run-migrations.js` aplica las migraciones `0000`–`0002` (Drizzle
+  salta las ya aplicadas).
+- `node dist/data/seeds/initial-seed.js` inserta roles, tipos,
+  `role_type_access`, usuarios y recursos.
+- `exec node dist/main.js` levanta la API (node como PID 1 para recibir
+  `SIGTERM` y cerrar la conexión a la DB de forma ordenada).
+
+Ambos pasos son **idempotentes**, así que reiniciar el contenedor no duplica
+datos y no hay que configurar nada en la plataforma.
+
+> Alternativa (opcional): si se prefiere correr el setup como paso aparte, se
+> puede definir un **Release Command** en Railway (Settings → Deploy →
+> Release Command) con `npm run db:migrate && npm run db:seed`. Como el `CMD`
+> ya lo hace, es redundante pero inocuo (idempotente).
+
+### Seed manual (fallback)
+
+Si por algún motivo hiciera falta correrlo a mano dentro del contenedor:
 
 ```bash
 /app # npm run db:seed
-
-> eiteck-resource-reservations@0.1.0 db:seed
-> node dist/data/seeds/initial-seed.js
-
 [seed] Insertando roles...
-[seed] Insertando type_resources...
 [seed] Reconstruyendo role_type_access (matriz de permisos)...
 [seed] Insertando usuarios de prueba...
 [seed] Insertando recursos de ejemplo...
 [seed] Listo ✓
 ```
-
-El seed es idempotente (`onConflictDoNothing` + reconstrucción de
-`role_type_access`), por lo que puede ejecutarse nuevamente sin duplicar datos.
 
 ### Servicio desplegado
 
