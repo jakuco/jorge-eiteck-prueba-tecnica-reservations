@@ -17,9 +17,9 @@
     "test:cov": "jest --coverage",
     "test:e2e": "jest --config ./test/jest-e2e.json",
     "db:generate": "drizzle-kit generate",
-    "db:migrate": "drizzle-kit migrate",
+    "db:migrate": "node scripts/run-migrations.js",
     "db:push": "drizzle-kit push",
-    "db:seed": "ts-node -r tsconfig-paths/register src/data/seeds/initial-seed.ts",
+    "db:seed": "node dist/data/seeds/initial-seed.js",
     "db:studio": "drizzle-kit studio"
   },
   "dependencies": {
