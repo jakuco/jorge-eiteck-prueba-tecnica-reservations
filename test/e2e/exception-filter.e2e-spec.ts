@@ -77,7 +77,7 @@ describe('AllExceptionsFilter (e2e)', () => {
     expect(res.body.path).toBe('/auth/login');
   });
 
-  it('Error no controlado → 500 con mensaje genérico (no leak)', async () => {
+  it('smoke: 201 cuando la reserva se crea correctamente (sin error)', async () => {
     const slot = futureSlot(200);
     await request(app.getHttpServer())
       .post('/reservations')

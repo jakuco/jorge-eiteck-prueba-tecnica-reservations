@@ -1,7 +1,7 @@
 import { Controller, Get, Inject } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiOkResponse, ApiServiceUnavailableResponse } from '@nestjs/swagger';
 import { sql } from 'drizzle-orm';
-import { DATABASE, type DB } from '@data/database.module';
+import { DATABASE, type DB } from '../../data/database.module';
 import { Public } from '../auth/decorators/public.decorator';
 
 @ApiTags('health')

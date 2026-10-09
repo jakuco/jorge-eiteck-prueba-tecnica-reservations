@@ -150,18 +150,104 @@ src/
 
 ## PostgreSQL / SQL
 
-> Esta sección se completa el día 2 con las decisiones de modelado, índices
-> y estrategia de transacciones. Por ahora: pendiente.
+### Modelo de datos (6 tablas)
+
+```
+users ──────────────┐
+                    │
+roles ──────────────┤── users.role_id → roles.id
+                    │
+type_resources ─────┤
+                    │
+resources ──────────┤── resources.type_id → type_resources.id
+   │                │
+   │   ┌────────────┘
+   │   │
+   ▼   ▼
+reservations ──────── resources.id (FK)
+   │
+   │   ┌───────────── reservations.user_id → users.id
+   ▼   ▼
+role_type_access (M:N) ── roles.id, type_resources.id
+```
+
+### Anti-solapamiento: EXCLUDE constraint
+
+La pieza clave del sistema. Garantiza a nivel DB que dos reservas confirmadas
+del mismo recurso no se solapen, sin necesidad de check a nivel aplicación:
+
+```sql
+CREATE EXTENSION IF NOT EXISTS btree_gist;
+
+ALTER TABLE reservations ADD CONSTRAINT reservations_no_overlap EXCLUDE USING gist (
+  resource_id WITH =,
+  tstzrange(start_time, end_time, '[)') WITH &&
+) WHERE (status = 'confirmed');
+```
+
+- `tstzrange(start, end, '[)')` → rango **semi-abierto** (la reserva 10:00–11:00
+  no se solapa con 11:00–12:00, contigüidad permitida).
+- `WHERE (status = 'confirmed')` → una reserva cancelada libera el slot.
+- El motor de Postgres devuelve **`SQLSTATE 23P01`** (`exclusion_violation`)
+  ante cualquier intento de solapamiento, que el backend traduce a `409`.
+
+### Índices
+
+```sql
+-- Listado de reservas por recurso + estado
+CREATE INDEX reservations_resource_id_status_idx
+  ON reservations (resource_id, status);
+
+-- Listado de reservas por usuario
+CREATE INDEX reservations_user_id_idx
+  ON reservations (user_id);
+
+-- Filtrado por rango temporal
+CREATE INDEX reservations_start_time_idx
+  ON reservations (start_time);
+```
+
+### Comandos de DB
+
+```bash
+# Generar migración desde schema Drizzle
+npm run db:generate
+
+# Aplicar migraciones (local o Railway)
+npm run db:migrate
+
+# Insertar datos de prueba (roles, tipos, admin, user)
+npm run db:seed
+```
+
+### Conexión a Railway
+
+```bash
+# Con Railway CLI autenticado:
+railway run npm run db:migrate
+railway run npm run db:seed
+```
+
+El plugin PostgreSQL de Railway expone la URL en `${{Postgres.DATABASE_URL}}`,
+que se inyecta al servicio de la app vía variables de entorno.
 
 ## Pruebas
 
 ```bash
-# Unit + integration
+# Tests unitarios (Jest, *.spec.ts dentro de src/)
 npm test
+
+# Tests e2e (Jest + Supertest, config en test/jest-e2e.json)
+npm run test:e2e
 
 # Coverage
 npm run test:cov
 ```
+
+Suite e2e: **42 tests** en 4 archivos (`resources`, `reservations`,
+`exception-filter`, `concurrency`). Cubre auth, CRUD, validaciones,
+ownership, time-range, exception filter y concurrencia con `Promise.all`
+(2 users, mismo user ×2, N=10, ganador verificado en DB).
 
 ## Despliegue
 
@@ -180,9 +266,22 @@ npm run test:cov
 ```bash
 npm run start:dev     # dev con hot reload
 npm run build         # build a dist/
+npm run start:prod    # producción (node dist/main)
 npm run lint          # eslint
-npm test              # correr tests
+npm test              # tests unitarios
+npm run test:e2e      # tests e2e
 npm run db:generate   # generar migración Drizzle desde el schema
 npm run db:migrate    # aplicar migraciones
+npm run db:push       # push directo del schema (solo dev)
+npm run db:seed       # insertar roles, tipos, admin, user
 npm run db:studio     # Drizzle Studio (GUI)
 ```
+
+## Credenciales de prueba (seed)
+
+Tras correr `npm run db:seed`:
+
+| Rol   | Email                  | Password    |
+|-------|------------------------|-------------|
+| admin | `admin@eiteck.local`   | `admin123!` |
+| user  | `user@eiteck.local`    | `user123!`  |
