@@ -1,5 +1,17 @@
-import { Controller, Get, Inject, ServiceUnavailableException } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiOkResponse, ApiServiceUnavailableResponse } from '@nestjs/swagger';
+import {
+  Controller,
+  Get,
+  Inject,
+  Redirect,
+  ServiceUnavailableException,
+} from '@nestjs/common';
+import {
+  ApiExcludeEndpoint,
+  ApiOkResponse,
+  ApiOperation,
+  ApiServiceUnavailableResponse,
+  ApiTags,
+} from '@nestjs/swagger';
 import { SkipThrottle } from '@nestjs/throttler';
 import { sql } from 'drizzle-orm';
 import { DATABASE, type DB } from '../../data/database.module';
@@ -8,11 +20,18 @@ import { Public } from '../auth/decorators/public.decorator';
 @ApiTags('health')
 @Public()
 @SkipThrottle()
-@Controller('health')
+@Controller()
 export class HealthController {
   constructor(@Inject(DATABASE) private readonly db: DB) {}
 
   @Get()
+  @Redirect('/health', 302)
+  @ApiExcludeEndpoint()
+  root(): void {
+    return;
+  }
+
+  @Get('health')
   @ApiOperation({ summary: 'Health check del servicio y de la base de datos' })
   @ApiOkResponse({
     description: 'El servicio y la DB están operativos',
