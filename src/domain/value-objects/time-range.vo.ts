@@ -1,3 +1,5 @@
+import { InvalidTimeRangeError } from '../errors/invalid-time-range.error';
+
 export class TimeRange {
   private static readonly SLOT_MINUTES = 30;
   private static readonly MIN_DURATION_MINUTES = 30;
@@ -7,17 +9,17 @@ export class TimeRange {
     public readonly end: Date,
   ) {
     if (start >= end) {
-      throw new Error('start debe ser menor que end');
+      throw new InvalidTimeRangeError('start debe ser menor que end');
     }
     if (start.getTime() < Date.now() - 60_000) {
-      throw new Error('start no puede ser en el pasado');
+      throw new InvalidTimeRangeError('start no puede ser en el pasado');
     }
     if (
       start.getMinutes() % TimeRange.SLOT_MINUTES !== 0 ||
       start.getSeconds() !== 0 ||
       start.getMilliseconds() !== 0
     ) {
-      throw new Error(
+      throw new InvalidTimeRangeError(
         `start debe ser múltiplo de ${TimeRange.SLOT_MINUTES} minutos (ej: 10:00, 10:30)`,
       );
     }
@@ -26,13 +28,13 @@ export class TimeRange {
       end.getSeconds() !== 0 ||
       end.getMilliseconds() !== 0
     ) {
-      throw new Error(
+      throw new InvalidTimeRangeError(
         `end debe ser múltiplo de ${TimeRange.SLOT_MINUTES} minutos (ej: 11:00, 11:30)`,
       );
     }
     const durationMin = (end.getTime() - start.getTime()) / 60_000;
     if (durationMin < TimeRange.MIN_DURATION_MINUTES) {
-      throw new Error(
+      throw new InvalidTimeRangeError(
         `La duración mínima es ${TimeRange.MIN_DURATION_MINUTES} minutos`,
       );
     }

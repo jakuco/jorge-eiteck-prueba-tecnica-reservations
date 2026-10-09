@@ -2,6 +2,13 @@ import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
+import { DATABASE, type DB } from '../src/data/database.module';
+import { reservations } from '../src/data/schema';
+
+export async function cleanReservations(app: INestApplication): Promise<void> {
+  const db = app.get<DB>(DATABASE);
+  await db.delete(reservations);
+}
 
 export async function bootstrapTestApp(): Promise<INestApplication> {
   const moduleRef: TestingModule = await Test.createTestingModule({

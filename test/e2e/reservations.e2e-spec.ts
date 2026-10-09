@@ -2,6 +2,7 @@ import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import {
   bootstrapTestApp,
+  cleanReservations,
   getAdminToken,
   getUserToken,
 } from '../test-utils';
@@ -36,6 +37,7 @@ describe('Reservations (e2e)', () => {
 
   beforeAll(async () => {
     app = await bootstrapTestApp();
+    await cleanReservations(app);
     adminToken = await getAdminToken(app);
     userToken = await getUserToken(app);
   });
@@ -96,7 +98,7 @@ describe('Reservations (e2e)', () => {
         .expect(400);
     });
 
-    it('TODO bloque 9: 400 si rango < 30 min (TimeRange VO)', async () => {
+    it('400 si rango < 30 min (TimeRange VO)', async () => {
       const start = new Date(Date.now() + 96 * 3600_000);
       const end = new Date(start.getTime() + 5 * 60_000);
       await request(app.getHttpServer())
@@ -106,10 +108,14 @@ describe('Reservations (e2e)', () => {
           resourceId: RESOURCE_ID,
           startTime: start.toISOString(),
           endTime: end.toISOString(),
+        })
+        .expect(400)
+        .expect((res) => {
+          expect(res.body.code).toBe('INVALID_TIME_RANGE');
         });
     });
 
-    it('TODO bloque 9: 400 si rango no alineado a 30 min', async () => {
+    it('400 si rango no alineado a 30 min', async () => {
       const start = new Date(Date.now() + 120 * 3600_000);
       start.setMinutes(15, 0, 0);
       const end = new Date(start.getTime() + 3600_000);
@@ -120,6 +126,10 @@ describe('Reservations (e2e)', () => {
           resourceId: RESOURCE_ID,
           startTime: start.toISOString(),
           endTime: end.toISOString(),
+        })
+        .expect(400)
+        .expect((res) => {
+          expect(res.body.code).toBe('INVALID_TIME_RANGE');
         });
     });
 
