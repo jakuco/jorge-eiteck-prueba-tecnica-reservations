@@ -102,4 +102,52 @@ describe('Concurrency (e2e) - Escenario crítico', () => {
     expect(successCount).toBe(1);
     expect(conflictCount).toBe(N - 1);
   });
+
+  it('3: la reserva ganadora (201) existe en DB con status=confirmed', async () => {
+    const slot = futureSlot(60);
+    const payload = {
+      resourceId: RESOURCE_ID,
+      startTime: slot.start,
+      endTime: slot.end,
+    };
+
+    const responses = await Promise.all([
+      request(app.getHttpServer())
+        .post('/reservations')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send(payload),
+      request(app.getHttpServer())
+        .post('/reservations')
+        .set('Authorization', `Bearer ${userToken}`)
+        .send(payload),
+      request(app.getHttpServer())
+        .post('/reservations')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send(payload),
+      request(app.getHttpServer())
+        .post('/reservations')
+        .set('Authorization', `Bearer ${userToken}`)
+        .send(payload),
+      request(app.getHttpServer())
+        .post('/reservations')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send(payload),
+    ]);
+
+    const winner = responses.find((r) => r.status === 201);
+    expect(winner).toBeDefined();
+    expect(winner!.body).toHaveProperty('id');
+    expect(winner!.body.status).toBe('confirmed');
+
+    const list = await request(app.getHttpServer())
+      .get(`/reservations?resourceId=${RESOURCE_ID}&status=confirmed`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+
+    const found = list.body.items.find(
+      (r: { id: number; startTime: string }) => r.id === winner!.body.id,
+    );
+    expect(found).toBeDefined();
+    expect(found.status).toBe('confirmed');
+  });
 });
