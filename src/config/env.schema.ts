@@ -5,7 +5,8 @@ export const envSchema = z.object({
   PORT: z.coerce.number().int().positive().default(3000),
   DATABASE_URL: z.string().url(),
   JWT_SECRET: z.string().min(32, 'JWT_SECRET debe tener al menos 32 caracteres'),
-  JWT_EXPIRES_IN: z.string().default('1h'),
+  JWT_EXPIRES_IN: z.string().default('15m'),
+  REFRESH_TOKEN_TTL_DAYS: z.coerce.number().int().positive().default(7),
 });
 
 export type Env = z.infer<typeof envSchema>;
