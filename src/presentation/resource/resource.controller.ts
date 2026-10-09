@@ -82,8 +82,11 @@ export class ResourceController {
   @ApiResponse({ status: 400, description: 'Datos inválidos o typeId inexistente' })
   @ApiResponse({ status: 401, description: 'No autenticado' })
   @ApiResponse({ status: 403, description: 'No es admin' })
-  create(@Body() dto: CreateResourceDto) {
-    return this.createResource.execute(dto);
+  create(
+    @Body() dto: CreateResourceDto,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    return this.createResource.execute({ ...dto, roleId: user.roleId });
   }
 
   @Patch(':id/status')
@@ -101,7 +104,12 @@ export class ResourceController {
   updateStatus(
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: UpdateResourceStatusDto,
+    @CurrentUser() user: JwtPayload,
   ) {
-    return this.updateResourceStatus.execute({ id, status: dto.status });
+    return this.updateResourceStatus.execute({
+      id,
+      status: dto.status,
+      roleId: user.roleId,
+    });
   }
 }

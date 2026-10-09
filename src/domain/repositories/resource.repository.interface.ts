@@ -6,7 +6,15 @@ export interface ResourceFilters {
   typeId?: number;
   name?: string;
   nameLike?: string;
-  allowedTypeIds?: number[];
+}
+
+/**
+ * Filtros de listado con el alcance por rol ya resuelto. `allowedTypeIds` es
+ * obligatorio a propósito: un listado sin alcance de tipos no puede existir,
+ * evitando fugas por omitir el filtro (deny-by-default).
+ */
+export interface ResourceQueryFilters extends ResourceFilters {
+  allowedTypeIds: number[];
 }
 
 export interface NewResourceData {
@@ -18,7 +26,7 @@ export interface NewResourceData {
 export interface IResourceRepository {
   findById(id: number): Promise<Resource | null>;
   findAll(
-    filters?: ResourceFilters,
+    filters: ResourceQueryFilters,
     pagination?: PaginationParams,
   ): Promise<PaginatedResult<Resource>>;
   create(data: NewResourceData): Promise<Resource>;

@@ -8,7 +8,7 @@ import { PaginatedResult, buildPaginatedResult, normalizePagination } from '../.
 import {
   IResourceRepository,
   NewResourceData,
-  ResourceFilters,
+  ResourceQueryFilters,
 } from '../../domain/repositories/resource.repository.interface';
 
 @Injectable()
@@ -27,23 +27,21 @@ export class DrizzleResourceRepository implements IResourceRepository {
   }
 
   async findAll(
-    filters?: ResourceFilters,
+    filters: ResourceQueryFilters,
     pagination?: { page?: number; pageSize?: number },
   ): Promise<PaginatedResult<Resource>> {
     const { page, pageSize, offset } = normalizePagination(pagination);
 
     const conditions = [];
-    if (filters?.status) conditions.push(eq(resources.status, filters.status));
-    if (filters?.typeId) conditions.push(eq(resources.typeId, filters.typeId));
-    if (filters?.name) conditions.push(eq(resources.name, filters.name));
-    if (filters?.nameLike) conditions.push(sql`${resources.name} LIKE ${`%${filters.nameLike}%`}`);
-    if (filters?.allowedTypeIds !== undefined) {
-      conditions.push(
-        filters.allowedTypeIds.length > 0
-          ? inArray(resources.typeId, filters.allowedTypeIds)
-          : sql`FALSE`,
-      );
-    }
+    if (filters.status) conditions.push(eq(resources.status, filters.status));
+    if (filters.typeId) conditions.push(eq(resources.typeId, filters.typeId));
+    if (filters.name) conditions.push(eq(resources.name, filters.name));
+    if (filters.nameLike) conditions.push(sql`${resources.name} LIKE ${`%${filters.nameLike}%`}`);
+    conditions.push(
+      filters.allowedTypeIds.length > 0
+        ? inArray(resources.typeId, filters.allowedTypeIds)
+        : sql`FALSE`,
+    );
 
     const where = conditions.length > 0 ? and(...conditions) : undefined;
 
