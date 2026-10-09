@@ -55,4 +55,27 @@ describe('Concurrency (e2e) - Escenario crítico', () => {
     const statuses = [r1.status, r2.status].sort();
     expect(statuses).toEqual([201, 409]);
   });
+
+  it('1B: mismo usuario dos veces en paralelo → 1×201 + 1×409', async () => {
+    const slot = futureSlot(36);
+    const payload = {
+      resourceId: RESOURCE_ID,
+      startTime: slot.start,
+      endTime: slot.end,
+    };
+
+    const [r1, r2] = await Promise.all([
+      request(app.getHttpServer())
+        .post('/reservations')
+        .set('Authorization', `Bearer ${userToken}`)
+        .send(payload),
+      request(app.getHttpServer())
+        .post('/reservations')
+        .set('Authorization', `Bearer ${userToken}`)
+        .send(payload),
+    ]);
+
+    const statuses = [r1.status, r2.status].sort();
+    expect(statuses).toEqual([201, 409]);
+  });
 });
