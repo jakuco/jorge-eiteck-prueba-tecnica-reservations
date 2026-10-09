@@ -1,11 +1,13 @@
 import { Controller, Get, Inject } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiOkResponse, ApiServiceUnavailableResponse } from '@nestjs/swagger';
+import { SkipThrottle } from '@nestjs/throttler';
 import { sql } from 'drizzle-orm';
 import { DATABASE, type DB } from '../../data/database.module';
 import { Public } from '../auth/decorators/public.decorator';
 
 @ApiTags('health')
 @Public()
+@SkipThrottle()
 @Controller('health')
 export class HealthController {
   constructor(@Inject(DATABASE) private readonly db: DB) {}
