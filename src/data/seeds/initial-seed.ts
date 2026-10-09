@@ -3,7 +3,13 @@ import postgres from 'postgres';
 import * as bcrypt from 'bcrypt';
 import { eq } from 'drizzle-orm';
 import * as schema from '../schema';
-import { roles, typeResources, roleTypeAccess, users } from '../schema';
+import {
+  resources,
+  roleTypeAccess,
+  roles,
+  typeResources,
+  users,
+} from '../schema';
 
 export async function runSeed(connectionString: string): Promise<void> {
   const client = postgres(connectionString, { max: 1 });
@@ -61,6 +67,34 @@ export async function runSeed(connectionString: string): Promise<void> {
         passwordHash: await bcrypt.hash('user123!', 10),
         name: 'Regular User',
         roleId: userRole.id,
+      },
+    ])
+    .onConflictDoNothing();
+
+  const salaReuniones = allTypes.find((t) => t.name === 'Sala de reuniones');
+  const vehiculo = allTypes.find((t) => t.name === 'Vehículo');
+
+  console.log('[seed] Insertando recursos de ejemplo...');
+  await db
+    .insert(resources)
+    .values([
+      {
+        name: 'Sala A1',
+        description: 'Sala principal con proyector',
+        typeId: salaReuniones!.id,
+        status: 'enabled',
+      },
+      {
+        name: 'Sala B2',
+        description: 'Sala mediana',
+        typeId: salaReuniones!.id,
+        status: 'enabled',
+      },
+      {
+        name: 'Vehículo corporativo',
+        description: 'Auto de la empresa',
+        typeId: vehiculo!.id,
+        status: 'enabled',
       },
     ])
     .onConflictDoNothing();
