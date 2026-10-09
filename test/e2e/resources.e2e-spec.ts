@@ -92,10 +92,21 @@ describe('Resources (e2e)', () => {
       expect(res.body.name).toBe(uniqueName);
       expect(res.body.status).toBe('enabled');
       expect(res.body.type.id).toBe(1);
+    });
+
+    it('409 si el nombre ya existe', async () => {
+      const name = `Dup ${Date.now()}`;
+      await request(app.getHttpServer())
+        .post('/resources')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ name, typeId: 1 })
+        .expect(201);
 
       await request(app.getHttpServer())
-        .delete(`/resources/${res.body.id}`)
-        .set('Authorization', `Bearer ${adminToken}`);
+        .post('/resources')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ name, typeId: 1 })
+        .expect(409);
     });
 
     it('400 si typeId no existe', async () => {
