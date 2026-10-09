@@ -78,4 +78,28 @@ describe('Concurrency (e2e) - Escenario crítico', () => {
     const statuses = [r1.status, r2.status].sort();
     expect(statuses).toEqual([201, 409]);
   });
+
+  it('2: N=10 requests en paralelo → 1×201 + 9×409', async () => {
+    const slot = futureSlot(48);
+    const payload = {
+      resourceId: RESOURCE_ID,
+      startTime: slot.start,
+      endTime: slot.end,
+    };
+
+    const N = 10;
+    const requests = Array.from({ length: N }, (_, i) =>
+      request(app.getHttpServer())
+        .post('/reservations')
+        .set('Authorization', `Bearer ${i % 2 === 0 ? adminToken : userToken}`)
+        .send(payload),
+    );
+
+    const responses = await Promise.all(requests);
+    const successCount = responses.filter((r) => r.status === 201).length;
+    const conflictCount = responses.filter((r) => r.status === 409).length;
+
+    expect(successCount).toBe(1);
+    expect(conflictCount).toBe(N - 1);
+  });
 });
