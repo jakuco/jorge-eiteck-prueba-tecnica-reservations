@@ -12,6 +12,7 @@ import { ResourceModule } from './presentation/resource/resource.module';
 import { ReservationModule } from './presentation/reservation/reservation.module';
 import { UserModule } from './presentation/user/user.module';
 import { RoleModule } from './presentation/role/role.module';
+import { TypeResourceModule } from './presentation/type-resource/type-resource.module';
 import { AllExceptionsFilter } from './presentation/common/filters/all-exceptions.filter';
 
 @Module({
@@ -51,6 +52,7 @@ import { AllExceptionsFilter } from './presentation/common/filters/all-exception
     ReservationModule,
     UserModule,
     RoleModule,
+    TypeResourceModule,
   ],
   providers: [
     { provide: APP_FILTER, useClass: AllExceptionsFilter },
