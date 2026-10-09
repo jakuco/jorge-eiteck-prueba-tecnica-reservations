@@ -22,4 +22,9 @@ export class DrizzleRoleRepository implements IRoleRepository {
       .limit(1);
     return r ? new Role(r.id, r.name, r.description, r.isActive) : null;
   }
+
+  async findAll(): Promise<Role[]> {
+    const rows = await this.db.select().from(roles).orderBy(roles.id);
+    return rows.map((r) => new Role(r.id, r.name, r.description, r.isActive));
+  }
 }

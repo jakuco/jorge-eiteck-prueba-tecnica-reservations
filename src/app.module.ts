@@ -10,6 +10,8 @@ import { HealthModule } from './presentation/health/health.module';
 import { AuthModule } from './presentation/auth/auth.module';
 import { ResourceModule } from './presentation/resource/resource.module';
 import { ReservationModule } from './presentation/reservation/reservation.module';
+import { UserModule } from './presentation/user/user.module';
+import { RoleModule } from './presentation/role/role.module';
 import { AllExceptionsFilter } from './presentation/common/filters/all-exceptions.filter';
 
 @Module({
@@ -47,6 +49,8 @@ import { AllExceptionsFilter } from './presentation/common/filters/all-exception
     HealthModule,
     ResourceModule,
     ReservationModule,
+    UserModule,
+    RoleModule,
   ],
   providers: [
     { provide: APP_FILTER, useClass: AllExceptionsFilter },
