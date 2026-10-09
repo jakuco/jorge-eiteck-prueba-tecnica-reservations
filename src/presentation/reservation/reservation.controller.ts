@@ -55,6 +55,7 @@ export class ReservationController {
     return this.createReservation.execute({
       resourceId: dto.resourceId,
       userId: user.sub,
+      roleId: user.roleId,
       startTime: new Date(dto.startTime),
       endTime: new Date(dto.endTime),
     });

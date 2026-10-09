@@ -1,7 +1,6 @@
 import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
 import * as bcrypt from 'bcrypt';
-import { eq } from 'drizzle-orm';
 import * as schema from '../schema';
 import {
   resources,
@@ -20,7 +19,11 @@ export async function runSeed(connectionString: string): Promise<void> {
     .insert(roles)
     .values([
       { name: 'admin', description: 'Administrador del sistema' },
-      { name: 'user', description: 'Usuario regular' },
+      { name: 'user', description: 'Usuario regular (solo salas)' },
+      {
+        name: 'user_plus',
+        description: 'Usuario con acceso a salas y vehículos',
+      },
     ])
     .onConflictDoNothing();
 
@@ -36,21 +39,30 @@ export async function runSeed(connectionString: string): Promise<void> {
   const allRoles = await db.select().from(roles);
   const allTypes = await db.select().from(typeResources);
 
-  console.log('[seed] Insertando role_type_access (todos pueden todos los tipos)...');
-  for (const r of allRoles) {
-    for (const t of allTypes) {
-      await db
-        .insert(roleTypeAccess)
-        .values({ roleId: r.id, typeResourceId: t.id })
-        .onConflictDoNothing();
-    }
-  }
-
   const adminRole = allRoles.find((r) => r.name === 'admin');
   const userRole = allRoles.find((r) => r.name === 'user');
-  if (!adminRole || !userRole) {
-    throw new Error('Roles no encontrados después del seed inicial');
+  const userPlusRole = allRoles.find((r) => r.name === 'user_plus');
+  const sala = allTypes.find((t) => t.name === 'Sala de reuniones');
+  const vehiculo = allTypes.find((t) => t.name === 'Vehículo');
+
+  if (!adminRole || !userRole || !userPlusRole || !sala || !vehiculo) {
+    throw new Error('Roles o tipos no encontrados después del seed inicial');
   }
+
+  console.log('[seed] Reconstruyendo role_type_access (matriz de permisos)...');
+  await db.delete(roleTypeAccess);
+
+  const accessMatrix: { roleId: number; typeResourceId: number }[] = [
+    // admin → todos los tipos
+    { roleId: adminRole.id, typeResourceId: sala.id },
+    { roleId: adminRole.id, typeResourceId: vehiculo.id },
+    // user (tipo A) → solo salas
+    { roleId: userRole.id, typeResourceId: sala.id },
+    // user_plus (tipo B) → salas + vehículos
+    { roleId: userPlusRole.id, typeResourceId: sala.id },
+    { roleId: userPlusRole.id, typeResourceId: vehiculo.id },
+  ];
+  await db.insert(roleTypeAccess).values(accessMatrix);
 
   console.log('[seed] Insertando usuarios de prueba...');
   await db
@@ -68,11 +80,14 @@ export async function runSeed(connectionString: string): Promise<void> {
         name: 'Regular User',
         roleId: userRole.id,
       },
+      {
+        email: 'userplus@eiteck.local',
+        passwordHash: await bcrypt.hash('user123!', 10),
+        name: 'Plus User',
+        roleId: userPlusRole.id,
+      },
     ])
     .onConflictDoNothing();
-
-  const salaReuniones = allTypes.find((t) => t.name === 'Sala de reuniones');
-  const vehiculo = allTypes.find((t) => t.name === 'Vehículo');
 
   console.log('[seed] Insertando recursos de ejemplo...');
   await db
@@ -81,19 +96,19 @@ export async function runSeed(connectionString: string): Promise<void> {
       {
         name: 'Sala A1',
         description: 'Sala principal con proyector',
-        typeId: salaReuniones!.id,
+        typeId: sala.id,
         status: 'enabled',
       },
       {
         name: 'Sala B2',
         description: 'Sala mediana',
-        typeId: salaReuniones!.id,
+        typeId: sala.id,
         status: 'enabled',
       },
       {
         name: 'Vehículo corporativo',
         description: 'Auto de la empresa',
-        typeId: vehiculo!.id,
+        typeId: vehiculo.id,
         status: 'enabled',
       },
     ])

@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { eq, and, sql, asc } from 'drizzle-orm';
+import { eq, and, sql, asc, inArray } from 'drizzle-orm';
 import { DATABASE, type DB } from '../database.module';
 import { resources, typeResources } from '../schema';
 import { Resource, ResourceStatus } from '../../domain/entities/resource.entity';
@@ -37,6 +37,13 @@ export class DrizzleResourceRepository implements IResourceRepository {
     if (filters?.typeId) conditions.push(eq(resources.typeId, filters.typeId));
     if (filters?.name) conditions.push(eq(resources.name, filters.name));
     if (filters?.nameLike) conditions.push(sql`${resources.name} LIKE ${`%${filters.nameLike}%`}`);
+    if (filters?.allowedTypeIds !== undefined) {
+      conditions.push(
+        filters.allowedTypeIds.length > 0
+          ? inArray(resources.typeId, filters.allowedTypeIds)
+          : sql`FALSE`,
+      );
+    }
 
     const where = conditions.length > 0 ? and(...conditions) : undefined;
 

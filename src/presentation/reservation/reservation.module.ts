@@ -7,7 +7,9 @@ import { ListReservationsUseCase } from '../../domain/use-cases/reservation/list
 import { GetResourceAvailabilityUseCase } from '../../domain/use-cases/reservation/get-resource-availability.use-case';
 import { DrizzleReservationRepository } from '../../data/repositories/drizzle-reservation.repository';
 import { DrizzleResourceRepository } from '../../data/repositories/drizzle-resource.repository';
+import { DrizzleRoleRepository } from '../../data/repositories/drizzle-role.repository';
 import { RESOURCE_REPOSITORY } from '../../domain/use-cases/reservation/create-reservation.use-case';
+import { ROLE_REPOSITORY } from '../../domain/use-cases/role/list-roles.use-case';
 
 @Module({
   controllers: [ReservationController, AvailabilityController],
@@ -18,6 +20,7 @@ import { RESOURCE_REPOSITORY } from '../../domain/use-cases/reservation/create-r
     GetResourceAvailabilityUseCase,
     { provide: RESERVATION_REPOSITORY, useClass: DrizzleReservationRepository },
     { provide: RESOURCE_REPOSITORY, useClass: DrizzleResourceRepository },
+    { provide: ROLE_REPOSITORY, useClass: DrizzleRoleRepository },
   ],
 })
 export class ReservationModule {}

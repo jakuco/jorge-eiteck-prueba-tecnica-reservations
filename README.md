@@ -119,26 +119,33 @@ src/
 - **Por qué:** setup mínimo para Node + Postgres, plan free alcanza para
   evaluación.
 
-### D4 — RBAC simplificado con hooks de extensibilidad (M:N)
+### D4 — RBAC por tipo de recurso (M:N)
 
-- **Fecha:** 2026-10-08
-- **Contexto:** el enunciado menciona "consultar los recursos que puede
-  utilizar" pero no define la granularidad ni exige un sistema RBAC completo.
-- **Decisión:** tabla `roles` con FK desde `users.role_id` (1:N). Tabla
-  puente `role_type_access` para el control de acceso por tipo (M:N).
-  Permisos efectivos viven en guards, no en filas de DB.
+- **Fecha:** 2026-10-08 (actualizado 2026-10-09)
+- **Contexto:** el enunciado pide "consultar los recursos que puede utilizar"
+  y "aplicación de permisos según el tipo de usuario".
+- **Decisión:** tabla `roles` con FK desde `users.role_id` (1:N) + tabla puente
+  `role_type_access` (M:N entre `roles` y `type_resources`). **El acceso a cada
+  tipo de recurso se resuelve 100% desde `role_type_access`**, sin hardcodear
+  nombres de rol en el código.
+- **Cómo funciona:**
+  - Cada rol tiene un conjunto de `type_resource` permitidos.
+  - `GET /resources` filtra los recursos por los tipos permitidos del rol.
+  - `GET /resources/:id`, `GET /resources/:id/availability` y
+    `POST /reservations` devuelven **403** si el tipo no está permitido.
+  - No hay `if (roleName === 'admin')`: admin ve todo porque el seed le
+    asigna ambos tipos en `role_type_access`.
+- **Perfiles sembrados:**
+  - `admin@eiteck.local` → todos los tipos (salas + vehículos).
+  - `user@eiteck.local` → solo "Sala de reuniones".
+  - `userplus@eiteck.local` → "Sala de reuniones" + "Vehículo".
 - **Por qué:**
-  - El spec solo pide 2 roles (`admin`, `user`) con permisos diferenciados.
-  - 1:N entre user y role matchea el spec literal ("una persona que utiliza
-    el sistema").
-  - M:N entre role y type_resource permite reglas por categoría sin
-    agregar columnas `text[]` ni tablas puente para cada permiso.
-  - Menor superficie de cambios, más rápido de implementar.
-- **Extensibilidad:** si en el futuro se necesitan permisos granulares por
-  acción, se agregan tablas `permissions` y `role_permissions` que apuntan
-  a `roles.id`. La FK `users.role_id` no se toca.
-- **Trade-off aceptado:** cambiar permisos requiere redeploy (vs INSERT en DB).
-  En 3 días con roles congelados, aceptable.
+  - El spec pide permisos según el tipo de usuario/relación con la información.
+  - M:N permite reglas por categoría sin `text[]` ni tablas por permiso.
+  - Data-driven: cambiar permisos es cambiar una fila, no un guard.
+- **Extensibilidad:** para permisos granulares por acción se agregan tablas
+  `permissions` y `role_permissions` apuntando a `roles.id`; la FK
+  `users.role_id` no se toca.
 
 ## Supuestos y trade-offs
 
@@ -152,24 +159,56 @@ src/
 
 ### Modelo de datos (6 tablas)
 
+```mermaid
+erDiagram
+    roles ||--o{ users : "asigna"
+    roles ||--o{ role_type_access : ""
+    type_resources ||--o{ role_type_access : ""
+    type_resources ||--o{ resources : "clasifica"
+    resources ||--o{ reservations : "es reservado"
+    users ||--o{ reservations : "reserva"
+
+    roles {
+        int id PK
+        varchar name UK
+        text description
+        boolean is_active
+    }
+    users {
+        int id PK
+        varchar email UK
+        varchar password_hash
+        varchar name
+        int role_id FK
+        boolean is_active
+    }
+    type_resources {
+        int id PK
+        varchar name UK
+        text description
+    }
+    role_type_access {
+        int role_id PK,FK
+        int type_resource_id PK,FK
+    }
+    resources {
+        int id PK
+        varchar name UK
+        text description
+        int type_id FK
+        varchar status
+    }
+    reservations {
+        int id PK
+        int resource_id FK
+        int user_id FK
+        timestamptz start_time
+        timestamptz end_time
+        varchar status
+    }
 ```
-users ──────────────┐
-                    │
-roles ──────────────┤── users.role_id → roles.id
-                    │
-type_resources ─────┤
-                    │
-resources ──────────┤── resources.type_id → type_resources.id
-   │                │
-   │   ┌────────────┘
-   │   │
-   ▼   ▼
-reservations ──────── resources.id (FK)
-   │
-   │   ┌───────────── reservations.user_id → users.id
-   ▼   ▼
-role_type_access (M:N) ── roles.id, type_resources.id
-```
+
+`role_type_access` (M:N) define qué tipos de recurso puede ver/reservar cada rol.
 
 ### Anti-solapamiento: EXCLUDE constraint
 
@@ -216,7 +255,7 @@ npm run db:generate
 # Aplicar migraciones (local o Railway)
 npm run db:migrate
 
-# Insertar datos de prueba (roles, tipos, admin, user)
+# Insertar datos de prueba (roles, tipos, usuarios, recursos)
 npm run db:seed
 ```
 
@@ -244,11 +283,12 @@ npm run test:e2e
 npm run test:cov
 ```
 
-Suite e2e: **47 tests** en 5 archivos (`resources`, `reservations`,
-`exception-filter`, `concurrency`, `security`). Cubre auth, CRUD, validaciones,
-ownership, time-range, exception filter, concurrencia con `Promise.all`
-(2 users, mismo user ×2, N=10, ganador verificado en DB), throttler y
-JWT inválido/expirado.
+Suite e2e: **70 tests** en 9 archivos (`resources`, `reservations`,
+`exception-filter`, `concurrency`, `security`, `availability`, `users-roles`,
+`type-resources`, `type-access`). Cubre auth, CRUD, validaciones, ownership,
+time-range, exception filter, concurrencia con `Promise.all` (2 users, mismo
+user ×2, N=10, ganador verificado en DB), throttler, JWT inválido, y el
+control de acceso por tipo de recurso (`role_type_access`).
 
 ## Despliegue
 
@@ -288,7 +328,7 @@ npm run test:e2e      # tests e2e
 npm run db:generate   # generar migración Drizzle desde el schema
 npm run db:migrate    # aplicar migraciones
 npm run db:push       # push directo del schema (solo dev)
-npm run db:seed       # insertar roles, tipos, admin, user
+npm run db:seed       # insertar roles, tipos, usuarios y recursos
 npm run db:studio     # Drizzle Studio (GUI)
 ```
 
@@ -296,7 +336,8 @@ npm run db:studio     # Drizzle Studio (GUI)
 
 Tras correr `npm run db:seed`:
 
-| Rol   | Email                  | Password    |
-|-------|------------------------|-------------|
-| admin | `admin@eiteck.local`   | `admin123!` |
-| user  | `user@eiteck.local`    | `user123!`  |
+| Rol         | Email                     | Password    | Tipos que ve            |
+|-------------|---------------------------|-------------|-------------------------|
+| `admin`     | `admin@eiteck.local`      | `admin123!` | Salas + Vehículos       |
+| `user`      | `user@eiteck.local`       | `user123!`  | Solo Salas              |
+| `user_plus` | `userplus@eiteck.local`   | `user123!`  | Salas + Vehículos       |

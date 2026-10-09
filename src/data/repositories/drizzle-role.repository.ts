@@ -1,7 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { eq } from 'drizzle-orm';
 import { DATABASE, type DB } from '../database.module';
-import { roles } from '../schema';
+import { roleTypeAccess, roles } from '../schema';
 import { Role } from '../../domain/entities/role.entity';
 import { IRoleRepository } from '../../domain/repositories/role.repository.interface';
 
@@ -26,5 +26,13 @@ export class DrizzleRoleRepository implements IRoleRepository {
   async findAll(): Promise<Role[]> {
     const rows = await this.db.select().from(roles).orderBy(roles.id);
     return rows.map((r) => new Role(r.id, r.name, r.description, r.isActive));
+  }
+
+  async findAllowedTypeIds(roleId: number): Promise<number[]> {
+    const rows = await this.db
+      .select({ typeResourceId: roleTypeAccess.typeResourceId })
+      .from(roleTypeAccess)
+      .where(eq(roleTypeAccess.roleId, roleId));
+    return rows.map((r) => r.typeResourceId);
   }
 }

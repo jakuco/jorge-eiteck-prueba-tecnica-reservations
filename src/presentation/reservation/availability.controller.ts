@@ -13,6 +13,8 @@ import {
 } from '@nestjs/swagger';
 import { AvailabilityQueryDto } from './dto/availability-query.dto';
 import { GetResourceAvailabilityUseCase } from '../../domain/use-cases/reservation/get-resource-availability.use-case';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { JwtPayload } from '../auth/strategies/jwt.strategy';
 
 @ApiTags('resources')
 @ApiBearerAuth()
@@ -35,9 +37,11 @@ export class AvailabilityController {
   async check(
     @Param('id', ParseIntPipe) id: number,
     @Query() query: AvailabilityQueryDto,
+    @CurrentUser() user: JwtPayload,
   ) {
     return this.getAvailability.execute({
       resourceId: id,
+      roleId: user.roleId,
       from: new Date(query.from),
       to: new Date(query.to),
     });

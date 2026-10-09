@@ -6,6 +6,7 @@ export interface ResourceFilters {
   typeId?: number;
   name?: string;
   nameLike?: string;
+  allowedTypeIds?: number[];
 }
 
 export interface NewResourceData {

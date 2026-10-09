@@ -6,11 +6,15 @@ import {
 } from '@nestjs/common';
 import { IReservationRepository } from '../../repositories/reservation.repository.interface';
 import { IResourceRepository } from '../../repositories/resource.repository.interface';
+import { IRoleRepository } from '../../repositories/role.repository.interface';
+import { assertTypeAccess } from '../../helpers/type-access';
 import { RESOURCE_REPOSITORY } from '../reservation/create-reservation.use-case';
 import { RESERVATION_REPOSITORY } from './cancel-reservation.use-case';
+import { ROLE_REPOSITORY } from '../role/list-roles.use-case';
 
 export interface GetResourceAvailabilityInput {
   resourceId: number;
+  roleId: number;
   from: Date;
   to: Date;
 }
@@ -35,6 +39,8 @@ export class GetResourceAvailabilityUseCase {
     private readonly reservationRepo: IReservationRepository,
     @Inject(RESOURCE_REPOSITORY)
     private readonly resourceRepo: IResourceRepository,
+    @Inject(ROLE_REPOSITORY)
+    private readonly roleRepo: IRoleRepository,
   ) {}
 
   async execute(input: GetResourceAvailabilityInput): Promise<ResourceAvailability> {
@@ -46,6 +52,9 @@ export class GetResourceAvailabilityUseCase {
     if (!resource) {
       throw new NotFoundException(`Recurso ${input.resourceId} no existe`);
     }
+
+    const allowedTypeIds = await this.roleRepo.findAllowedTypeIds(input.roleId);
+    assertTypeAccess(allowedTypeIds, resource.type.id);
 
     const busy = await this.reservationRepo.findOverlappingInRange(
       input.resourceId,

@@ -25,6 +25,8 @@ import { GetResourceUseCase } from '../../domain/use-cases/resource/get-resource
 import { ListResourcesUseCase } from '../../domain/use-cases/resource/list-resources.use-case';
 import { UpdateResourceStatusUseCase } from '../../domain/use-cases/resource/update-resource-status.use-case';
 import { Roles } from '../auth/decorators/roles.decorator';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { JwtPayload } from '../auth/strategies/jwt.strategy';
 
 @ApiTags('resources')
 @ApiBearerAuth()
@@ -45,9 +47,12 @@ export class ResourceController {
   })
   @ApiResponse({ status: 200, description: 'Lista paginada de recursos' })
   @ApiResponse({ status: 401, description: 'No autenticado' })
-  list(@Query() query: ListResourcesQueryDto) {
+  list(
+    @Query() query: ListResourcesQueryDto,
+    @CurrentUser() user: JwtPayload,
+  ) {
     const { page, pageSize, ...filters } = query;
-    return this.listResources.execute(filters, { page, pageSize });
+    return this.listResources.execute(filters, { page, pageSize }, user.roleId);
   }
 
   @Get(':id')
@@ -58,8 +63,11 @@ export class ResourceController {
   @ApiResponse({ status: 200, description: 'Recurso encontrado' })
   @ApiResponse({ status: 401, description: 'No autenticado' })
   @ApiResponse({ status: 404, description: 'Recurso no encontrado' })
-  async findOne(@Param('id', ParseIntPipe) id: number) {
-    return this.getResource.execute(id);
+  async findOne(
+    @Param('id', ParseIntPipe) id: number,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    return this.getResource.execute(id, user.roleId);
   }
 
   @Post()

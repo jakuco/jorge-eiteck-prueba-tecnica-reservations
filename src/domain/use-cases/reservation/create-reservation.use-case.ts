@@ -7,15 +7,19 @@ import {
 import { DATABASE, type DB } from '../../../data/database.module';
 import { reservations } from '../../../data/schema';
 import { IResourceRepository } from '../../repositories/resource.repository.interface';
+import { IRoleRepository } from '../../repositories/role.repository.interface';
 import { Reservation } from '../../entities/reservation.entity';
 import { TimeRange } from '../../value-objects/time-range.vo';
 import { isExclusionViolation } from '../../helpers/db-errors';
+import { assertTypeAccess } from '../../helpers/type-access';
+import { ROLE_REPOSITORY } from '../role/list-roles.use-case';
 
 export const RESOURCE_REPOSITORY = Symbol('IResourceRepository');
 
 export interface CreateReservationInput {
   resourceId: number;
   userId: number;
+  roleId: number;
   startTime: Date;
   endTime: Date;
 }
@@ -25,6 +29,7 @@ export class CreateReservationUseCase {
   constructor(
     @Inject(DATABASE) private readonly db: DB,
     @Inject(RESOURCE_REPOSITORY) private readonly resourceRepo: IResourceRepository,
+    @Inject(ROLE_REPOSITORY) private readonly roleRepo: IRoleRepository,
   ) {}
 
   async execute(input: CreateReservationInput): Promise<Reservation> {
@@ -37,6 +42,9 @@ export class CreateReservationUseCase {
     if (!resource.isEnabled()) {
       throw new BadRequestException('El recurso no está habilitado');
     }
+
+    const allowedTypeIds = await this.roleRepo.findAllowedTypeIds(input.roleId);
+    assertTypeAccess(allowedTypeIds, resource.type.id);
 
     return this.db.transaction(async (tx) => {
       try {
