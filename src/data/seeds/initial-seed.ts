@@ -50,8 +50,6 @@ export async function runSeed(connectionString: string): Promise<void> {
   }
 
   console.log('[seed] Reconstruyendo role_type_access (matriz de permisos)...');
-  await db.delete(roleTypeAccess);
-
   const accessMatrix: { roleId: number; typeResourceId: number }[] = [
     // admin → todos los tipos
     { roleId: adminRole.id, typeResourceId: sala.id },
@@ -62,7 +60,11 @@ export async function runSeed(connectionString: string): Promise<void> {
     { roleId: userPlusRole.id, typeResourceId: sala.id },
     { roleId: userPlusRole.id, typeResourceId: vehiculo.id },
   ];
-  await db.insert(roleTypeAccess).values(accessMatrix);
+  // Atómico: el DELETE + INSERT no puede quedar a medias (deny-all silencioso).
+  await db.transaction(async (tx) => {
+    await tx.delete(roleTypeAccess);
+    await tx.insert(roleTypeAccess).values(accessMatrix);
+  });
 
   console.log('[seed] Insertando usuarios de prueba...');
   await db
