@@ -6,7 +6,7 @@ export const resources = pgTable(
   'resources',
   {
     id: serial('id').primaryKey(),
-    name: varchar('name', { length: 255 }).notNull(),
+    name: varchar('name', { length: 255 }).notNull().unique(),
     description: text('description'),
     typeId: integer('type_id')
       .notNull()

@@ -8,6 +8,13 @@
       "when": 1791433489035,
       "tag": "0000_useful_genesis",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1791583069597,
+      "tag": "0001_elite_vindicator",
+      "breakpoints": true
     }
   ]
 }
