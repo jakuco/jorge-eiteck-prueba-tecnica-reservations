@@ -22,6 +22,11 @@ export interface IReservationRepository {
     filters: ReservationFilters,
     pagination?: PaginationParams,
   ): Promise<PaginatedResult<Reservation>>;
+  findOverlappingInRange(
+    resourceId: number,
+    from: Date,
+    to: Date,
+  ): Promise<Reservation[]>;
   create(data: NewReservationData): Promise<Reservation>;
   setStatus(id: number, status: ReservationStatus): Promise<Reservation>;
 }

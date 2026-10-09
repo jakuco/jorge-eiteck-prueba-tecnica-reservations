@@ -61,6 +61,26 @@ export class DrizzleReservationRepository implements IReservationRepository {
     return buildPaginatedResult(rows.map((r) => this.toDomain(r)), total, page, pageSize);
   }
 
+  async findOverlappingInRange(
+    resourceId: number,
+    from: Date,
+    to: Date,
+  ): Promise<Reservation[]> {
+    const rows = await this.db
+      .select()
+      .from(reservations)
+      .where(
+        and(
+          eq(reservations.resourceId, resourceId),
+          eq(reservations.status, 'confirmed'),
+          sql`${reservations.endTime} > ${from.toISOString()}`,
+          sql`${reservations.startTime} < ${to.toISOString()}`,
+        ),
+      )
+      .orderBy(asc(reservations.startTime));
+    return rows.map((r) => this.toDomain(r));
+  }
+
   async create(data: NewReservationData): Promise<Reservation> {
     const [r] = await this.db
       .insert(reservations)
