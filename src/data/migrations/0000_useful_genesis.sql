@@ -102,8 +102,6 @@ ALTER TABLE "reservations" ADD CONSTRAINT "reservations_no_overlap"
     tstzrange("start_time", "end_time", '[)') WITH &&
   ) WHERE ("status" = 'confirmed');
 --> statement-breakpoint
-CREATE INDEX "users_email_idx" ON "users" USING btree ("email");
---> statement-breakpoint
 CREATE INDEX "resources_status_type_idx" ON "resources" USING btree ("status", "type_id");
 --> statement-breakpoint
 CREATE INDEX "reservations_user_status_idx" ON "reservations" USING btree ("user_id", "status");

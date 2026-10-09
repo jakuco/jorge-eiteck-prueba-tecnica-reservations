@@ -150,18 +150,105 @@ src/
 
 ## PostgreSQL / SQL
 
-> Esta sección se completa el día 2 con las decisiones de modelado, índices
-> y estrategia de transacciones. Por ahora: pendiente.
+### Modelo de datos (6 tablas)
+
+```
+users ──────────────┐
+                    │
+roles ──────────────┤── users.role_id → roles.id
+                    │
+type_resources ─────┤
+                    │
+resources ──────────┤── resources.type_id → type_resources.id
+   │                │
+   │   ┌────────────┘
+   │   │
+   ▼   ▼
+reservations ──────── resources.id (FK)
+   │
+   │   ┌───────────── reservations.user_id → users.id
+   ▼   ▼
+role_type_access (M:N) ── roles.id, type_resources.id
+```
+
+### Anti-solapamiento: EXCLUDE constraint
+
+La pieza clave del sistema. Garantiza a nivel DB que dos reservas confirmadas
+del mismo recurso no se solapen, sin necesidad de check a nivel aplicación:
+
+```sql
+CREATE EXTENSION IF NOT EXISTS btree_gist;
+
+ALTER TABLE reservations ADD CONSTRAINT reservations_no_overlap EXCLUDE USING gist (
+  resource_id WITH =,
+  tstzrange(start_time, end_time, '[)') WITH &&
+) WHERE (status = 'confirmed');
+```
+
+- `tstzrange(start, end, '[)')` → rango **semi-abierto** (la reserva 10:00–11:00
+  no se solapa con 11:00–12:00, contigüidad permitida).
+- `WHERE (status = 'confirmed')` → una reserva cancelada libera el slot.
+- El motor de Postgres devuelve **`SQLSTATE 23P01`** (`exclusion_violation`)
+  ante cualquier intento de solapamiento, que el backend traduce a `409`.
+
+### Índices
+
+```sql
+-- Listado de recursos por estado y tipo
+CREATE INDEX "resources_status_type_idx"
+  ON "resources" USING btree ("status", "type_id");
+
+-- Listado de reservas por usuario + estado
+CREATE INDEX "reservations_user_status_idx"
+  ON "reservations" USING btree ("user_id", "status");
+
+-- Listado de reservas por recurso + rango temporal
+CREATE INDEX "reservations_resource_range_idx"
+  ON "reservations" USING btree ("resource_id", "start_time", "end_time");
+```
+
+### Comandos de DB
+
+```bash
+# Generar migración desde schema Drizzle
+npm run db:generate
+
+# Aplicar migraciones (local o Railway)
+npm run db:migrate
+
+# Insertar datos de prueba (roles, tipos, admin, user)
+npm run db:seed
+```
+
+### Conexión a Railway
+
+```bash
+# Con Railway CLI autenticado:
+railway run npm run db:migrate
+railway run npm run db:seed
+```
+
+El plugin PostgreSQL de Railway expone la URL en `${{Postgres.DATABASE_URL}}`,
+que se inyecta al servicio de la app vía variables de entorno.
 
 ## Pruebas
 
 ```bash
-# Unit + integration
+# Tests unitarios (Jest, *.spec.ts dentro de src/)
 npm test
+
+# Tests e2e (Jest + Supertest, config en test/jest-e2e.json)
+npm run test:e2e
 
 # Coverage
 npm run test:cov
 ```
+
+Suite e2e: **47 tests** en 5 archivos (`resources`, `reservations`,
+`exception-filter`, `concurrency`, `security`). Cubre auth, CRUD, validaciones,
+ownership, time-range, exception filter, concurrencia con `Promise.all`
+(2 users, mismo user ×2, N=10, ganador verificado en DB), throttler y
+JWT inválido/expirado.
 
 ## Despliegue
 
@@ -169,20 +256,47 @@ npm run test:cov
 
 1. Crear proyecto nuevo en Railway.
 2. Agregar servicio Postgres (Railway provisiona la URL en `DATABASE_URL`).
-3. Conectar repo y configurar variables de entorno
-   (`JWT_SECRET`, `JWT_EXPIRES_IN`).
-4. Railway detecta `Dockerfile` y construye.
+3. Conectar repo y configurar variables de entorno:
+   - `DATABASE_URL` → `${{Postgres.DATABASE_URL}}`
+   - `JWT_SECRET` → valor fuerte (≥32 chars)
+   - `JWT_EXPIRES_IN` → `1h` (opcional)
+4. **Configurar Release Command** (Settings → Deploy → Release Command):
+
+   ```bash
+   npm run db:migrate && npm run db:seed
+   ```
+
+   Esto corre antes de cada deploy. Si solo es necesario migrar, usar
+   `npm run db:migrate`; el seed es idempotente (`onConflictDoNothing`).
+5. Railway detecta `Dockerfile` y construye.
 
 > URL de producción se documenta una vez desplegado.
+
+> **Importante:** sin el Release Command, el contenedor arranca apuntando
+> a una DB sin tablas y `/health` devuelve 200 (es un `SELECT 1` que no
+> consulta tablas) aunque `/auth/login` tire 500.
 
 ## Comandos útiles
 
 ```bash
 npm run start:dev     # dev con hot reload
 npm run build         # build a dist/
+npm run start:prod    # producción (node dist/main)
 npm run lint          # eslint
-npm test              # correr tests
+npm test              # tests unitarios
+npm run test:e2e      # tests e2e
 npm run db:generate   # generar migración Drizzle desde el schema
 npm run db:migrate    # aplicar migraciones
+npm run db:push       # push directo del schema (solo dev)
+npm run db:seed       # insertar roles, tipos, admin, user
 npm run db:studio     # Drizzle Studio (GUI)
 ```
+
+## Credenciales de prueba (seed)
+
+Tras correr `npm run db:seed`:
+
+| Rol   | Email                  | Password    |
+|-------|------------------------|-------------|
+| admin | `admin@eiteck.local`   | `admin123!` |
+| user  | `user@eiteck.local`    | `user123!`  |

@@ -21,6 +21,9 @@ Thumbs.db
 .vscode/
 *.swp
 
+# OpenCode (metadata local de la herramienta AI, no del proyecto)
+.opencode/
+
 # Build / cache
 .tsbuildinfo
 .nest/
