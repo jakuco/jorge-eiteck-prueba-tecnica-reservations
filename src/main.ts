@@ -9,6 +9,11 @@ async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule, { bufferLogs: true });
   app.useLogger(app.get(Logger));
 
+  const httpAdapter = app.getHttpAdapter().getInstance();
+  if (httpAdapter && typeof httpAdapter.set === 'function') {
+    httpAdapter.set('trust proxy', 1);
+  }
+
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,

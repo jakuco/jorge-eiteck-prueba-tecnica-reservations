@@ -62,6 +62,14 @@ describe('Security (e2e) - Hardening', () => {
   });
 
   describe('Recurso deshabilitado', () => {
+    afterAll(async () => {
+      await request(app.getHttpServer())
+        .patch(`/resources/${RESOURCE_ID}/status`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ status: 'enabled' })
+        .expect(200);
+    });
+
     it('POST /reservations con recurso en status=disabled → 400', async () => {
       await request(app.getHttpServer())
         .patch(`/resources/${RESOURCE_ID}/status`)
@@ -69,21 +77,23 @@ describe('Security (e2e) - Hardening', () => {
         .send({ status: 'disabled' })
         .expect(200);
 
-      const slot = futureSlot(72);
-      await request(app.getHttpServer())
-        .post('/reservations')
-        .set('Authorization', `Bearer ${userToken}`)
-        .send({ resourceId: RESOURCE_ID, startTime: slot.start, endTime: slot.end })
-        .expect(400)
-        .expect((res) => {
-          expect(res.body.message).toMatch(/habilitado/i);
-        });
-
-      await request(app.getHttpServer())
-        .patch(`/resources/${RESOURCE_ID}/status`)
-        .set('Authorization', `Bearer ${adminToken}`)
-        .send({ status: 'enabled' })
-        .expect(200);
+      try {
+        const slot = futureSlot(72);
+        await request(app.getHttpServer())
+          .post('/reservations')
+          .set('Authorization', `Bearer ${userToken}`)
+          .send({ resourceId: RESOURCE_ID, startTime: slot.start, endTime: slot.end })
+          .expect(400)
+          .expect((res) => {
+            expect(res.body.message).toMatch(/habilitado/i);
+          });
+      } finally {
+        await request(app.getHttpServer())
+          .patch(`/resources/${RESOURCE_ID}/status`)
+          .set('Authorization', `Bearer ${adminToken}`)
+          .send({ status: 'enabled' })
+          .expect(200);
+      }
     });
   });
 

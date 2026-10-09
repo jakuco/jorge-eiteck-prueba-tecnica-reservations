@@ -1,4 +1,4 @@
-import { Controller, Get, Inject } from '@nestjs/common';
+import { Controller, Get, Inject, ServiceUnavailableException } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiOkResponse, ApiServiceUnavailableResponse } from '@nestjs/swagger';
 import { SkipThrottle } from '@nestjs/throttler';
 import { sql } from 'drizzle-orm';
@@ -30,20 +30,24 @@ export class HealthController {
     status: 'ok';
     uptimeSeconds: number;
     timestamp: string;
-    db: 'ok' | 'error';
+    db: 'ok';
   }> {
-    let dbStatus: 'ok' | 'error' = 'ok';
     try {
       await this.db.execute(sql`SELECT 1`);
     } catch {
-      dbStatus = 'error';
+      throw new ServiceUnavailableException({
+        status: 'error',
+        timestamp: new Date().toISOString(),
+        db: 'error',
+        message: 'Database no responde',
+      });
     }
 
     return {
       status: 'ok',
       uptimeSeconds: Math.round(process.uptime() * 1000) / 1000,
       timestamp: new Date().toISOString(),
-      db: dbStatus,
+      db: 'ok',
     };
   }
 }

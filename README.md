@@ -194,17 +194,17 @@ ALTER TABLE reservations ADD CONSTRAINT reservations_no_overlap EXCLUDE USING gi
 ### Índices
 
 ```sql
--- Listado de reservas por recurso + estado
-CREATE INDEX reservations_resource_id_status_idx
-  ON reservations (resource_id, status);
+-- Listado de recursos por estado y tipo
+CREATE INDEX "resources_status_type_idx"
+  ON "resources" USING btree ("status", "type_id");
 
--- Listado de reservas por usuario
-CREATE INDEX reservations_user_id_idx
-  ON reservations (user_id);
+-- Listado de reservas por usuario + estado
+CREATE INDEX "reservations_user_status_idx"
+  ON "reservations" USING btree ("user_id", "status");
 
--- Filtrado por rango temporal
-CREATE INDEX reservations_start_time_idx
-  ON reservations (start_time);
+-- Listado de reservas por recurso + rango temporal
+CREATE INDEX "reservations_resource_range_idx"
+  ON "reservations" USING btree ("resource_id", "start_time", "end_time");
 ```
 
 ### Comandos de DB
@@ -244,10 +244,11 @@ npm run test:e2e
 npm run test:cov
 ```
 
-Suite e2e: **42 tests** en 4 archivos (`resources`, `reservations`,
-`exception-filter`, `concurrency`). Cubre auth, CRUD, validaciones,
-ownership, time-range, exception filter y concurrencia con `Promise.all`
-(2 users, mismo user ×2, N=10, ganador verificado en DB).
+Suite e2e: **47 tests** en 5 archivos (`resources`, `reservations`,
+`exception-filter`, `concurrency`, `security`). Cubre auth, CRUD, validaciones,
+ownership, time-range, exception filter, concurrencia con `Promise.all`
+(2 users, mismo user ×2, N=10, ganador verificado en DB), throttler y
+JWT inválido/expirado.
 
 ## Despliegue
 
@@ -255,11 +256,25 @@ ownership, time-range, exception filter y concurrencia con `Promise.all`
 
 1. Crear proyecto nuevo en Railway.
 2. Agregar servicio Postgres (Railway provisiona la URL en `DATABASE_URL`).
-3. Conectar repo y configurar variables de entorno
-   (`JWT_SECRET`, `JWT_EXPIRES_IN`).
-4. Railway detecta `Dockerfile` y construye.
+3. Conectar repo y configurar variables de entorno:
+   - `DATABASE_URL` → `${{Postgres.DATABASE_URL}}`
+   - `JWT_SECRET` → valor fuerte (≥32 chars)
+   - `JWT_EXPIRES_IN` → `1h` (opcional)
+4. **Configurar Release Command** (Settings → Deploy → Release Command):
+
+   ```bash
+   npm run db:migrate && npm run db:seed
+   ```
+
+   Esto corre antes de cada deploy. Si solo es necesario migrar, usar
+   `npm run db:migrate`; el seed es idempotente (`onConflictDoNothing`).
+5. Railway detecta `Dockerfile` y construye.
 
 > URL de producción se documenta una vez desplegado.
+
+> **Importante:** sin el Release Command, el contenedor arranca apuntando
+> a una DB sin tablas y `/health` devuelve 200 (es un `SELECT 1` que no
+> consulta tablas) aunque `/auth/login` tire 500.
 
 ## Comandos útiles
 
