@@ -11,7 +11,7 @@ superpuestas, autenticación JWT, control de acceso por rol y trazabilidad.
 - **Framework**: NestJS 10
 - **ORM**: Drizzle ORM
 - **DB**: PostgreSQL 16
-- **Auth**: JWT (access tokens) + bcrypt
+- **Auth**: JWT access token (15 min) + refresh tokens rotativos (7 días) + bcrypt
 - **Validación**: class-validator + class-transformer
 - **Docs**: Swagger / OpenAPI (`/api/docs`)
 - **Tests**: Jest + Supertest
@@ -41,7 +41,7 @@ Servicios levantados:
 
 - **API**: <http://localhost:3000>
 - **Swagger**: <http://localhost:3000/api/docs>
-- **Postgres**: `localhost:5432` (user: `eiteck`, pass: `eiteck_dev_password`, db: `eiteck_reservations`)
+- **Postgres**: `localhost:5434` (user: `eiteck`, pass: `eiteck_dev_password`, db: `eiteck_reservations`)
 
 ### Sin Docker (modo dev nativo)
 
@@ -59,8 +59,9 @@ npm run start:dev
 | `NODE_ENV` | Entorno de ejecución | `development` |
 | `PORT` | Puerto HTTP | `3000` |
 | `DATABASE_URL` | URL de conexión a Postgres | `postgresql://user:pass@host:5432/db` |
-| `JWT_SECRET` | Secreto para firmar tokens (mín. 32 chars) | generado con `openssl rand -base64 48` |
-| `JWT_EXPIRES_IN` | Vida del access token | `1h` |
+| `JWT_SECRET` | Secreto para firmar el access token (mín. 32 chars) | generado con `openssl rand -base64 48` |
+| `JWT_EXPIRES_IN` | Vida del access token (corto a propósito) | `15m` |
+| `REFRESH_TOKEN_TTL_DAYS` | Vida del refresh token (rotativo) | `7` |
 
 Ver `src/config/env.schema.ts` para el detalle de validación.
 
@@ -147,16 +148,43 @@ src/
   `permissions` y `role_permissions` apuntando a `roles.id`; la FK
   `users.role_id` no se toca.
 
+### D5 — Sesiones: refresh tokens rotativos persistidos
+
+- **Fecha:** 2026-10-09
+- **Contexto:** el enunciado (§7) pide un mecanismo razonable de **renovación**
+  y **finalización** de sesiones, además de proteger el acceso ante robo de
+  credenciales.
+- **Decisión:**
+  - **Access token** JWT corto (`15m`) para autorizar requests.
+  - **Refresh token** *opaco* (384 bits aleatorios), persistido **hasheado
+    (sha256)** en `refresh_tokens`, con **rotación** en cada `/auth/refresh`.
+  - **Detección de reuso:** si se presenta un refresh ya consumido, se asume
+    robo y se **revocan todas las sesiones** del usuario.
+- **Endpoints:** `POST /auth/login` (emite ambos), `POST /auth/refresh`
+  (rota), `POST /auth/logout` (revoca el refresh del usuario).
+- **Alternativas consideradas:**
+  - *Refresh token JWT stateless*: más simple, pero **no se puede revocar** sin
+    una lista de bloqueo (que igual es una tabla), así que no aporta ventaja.
+  - *Solo access token*: sin renovación; obliga a sesiones largas o re-login
+    frecuente.
+- **Por qué así:** el refresh opaco + hash en DB permite revocación real,
+  rotación y detección de reuso, y demuestra modelado SQL, índices y
+  transacciones (la rotación consume el token viejo y emite el nuevo en una
+  única transacción).
+- **Trade-off:** el access token sigue siendo stateless; tras un logout muere
+  como máximo en su TTL (`15m`). Se acota la ventana a propósito con un access
+  corto.
+
 ## Supuestos y trade-offs
 
-- **Refresh tokens**: simplificación inicial — solo access token con vida
-  moderada (1 h). Renovación de sesión queda como mejora documentada.
-- **Autorización con `roleId` en el JWT**: el token es stateless y lleva
+- **Autorización con `roleId` en el JWT**: el access token es stateless y lleva
   `roleId`/`roleName`; `JwtStrategy.validate()` no revalida contra la DB. El
   *enforcement* de tipos sí es data-driven en cada request (lee
   `role_type_access` con ese `roleId`), pero **revocar un tipo, cambiar de rol
-  o desactivar al usuario no surte efecto hasta que expire el token (≤1 h)**.
-  Mitigación propuesta: revalidar rol/usuario en `validate()` o token-version.
+  o desactivar al usuario no surte efecto hasta que expire el access token
+  (≤15 min)**. Mitigación propuesta: revalidar rol/usuario en `validate()` o
+  token-version. La **renovación y el cierre de sesión** sí están resueltos con
+  refresh tokens rotativos (ver D5).
 - **Dos planos de autorización**: `role_type_access` gobierna el **plano de
   datos** (qué tipos de recurso se ven/reservan) de forma 100% data-driven. Los
   endpoints de administración (`POST /resources`, `PATCH /:id/status`,
@@ -169,16 +197,19 @@ src/
 
 ## PostgreSQL / SQL
 
-### Modelo de datos (6 tablas)
+### Modelo de datos (7 tablas)
+
+El siguiente diagrama de entidades (Mermaid) resume el modelo relacional:
 
 ```mermaid
 erDiagram
     roles ||--o{ users : "asigna"
-    roles ||--o{ role_type_access : ""
-    type_resources ||--o{ role_type_access : ""
+    roles ||--o{ role_type_access : "accede"
+    type_resources ||--o{ role_type_access : "concede"
     type_resources ||--o{ resources : "clasifica"
-    resources ||--o{ reservations : "es reservado"
-    users ||--o{ reservations : "reserva"
+    resources ||--o{ reservations : "reservado"
+    users ||--o{ reservations : "solicita"
+    users ||--o{ refresh_tokens : "sesiones"
 
     roles {
         int id PK
@@ -193,6 +224,8 @@ erDiagram
         varchar name
         int role_id FK
         boolean is_active
+        timestamptz created_at
+        timestamptz updated_at
     }
     type_resources {
         int id PK
@@ -209,6 +242,8 @@ erDiagram
         text description
         int type_id FK
         varchar status
+        timestamptz created_at
+        timestamptz updated_at
     }
     reservations {
         int id PK
@@ -217,10 +252,40 @@ erDiagram
         timestamptz start_time
         timestamptz end_time
         varchar status
+        timestamptz created_at
+        timestamptz updated_at
+    }
+    refresh_tokens {
+        int id PK
+        int user_id FK
+        char token_hash UK
+        timestamptz expires_at
+        timestamptz revoked_at
+        int replaced_by_id FK
+        varchar user_agent
+        varchar ip
+        timestamptz created_at
     }
 ```
 
-`role_type_access` (M:N) define qué tipos de recurso puede ver/reservar cada rol.
+Notas del modelo:
+
+- `role_type_access` es **PK compuesta** (`role_id`, `type_resource_id`); define
+  qué tipos de recurso puede ver/reservar cada rol.
+- `refresh_tokens.replaced_by_id` es **auto-referencia** (cadena de rotación).
+- `refresh_tokens.revoked_at` marca la revocación; `token_hash` tiene índice
+  único.
+
+### Sesiones: rotación de refresh tokens
+
+- El token se guarda **hasheado (sha256)** en `refresh_tokens.token_hash`
+  (índice único); el token crudo nunca se persiste.
+- La rotación ocurre en **una transacción**: consume el token actual
+  (`revoked_at = now()`) e inserta el nuevo, enlazándolos con
+  `replaced_by_id`. Dos `/auth/refresh` concurrentes con el mismo token no
+  pueden tener ambos éxito.
+- Índice `(user_id, revoked_at)` para revocar todas las sesiones de un usuario
+  ante reuso; índice `(expires_at)` para limpieza de tokens expirados.
 
 ### Anti-solapamiento: EXCLUDE constraint
 
@@ -295,12 +360,18 @@ npm run test:e2e
 npm run test:cov
 ```
 
-Suite e2e: **70 tests** en 9 archivos (`resources`, `reservations`,
-`exception-filter`, `concurrency`, `security`, `availability`, `users-roles`,
-`type-resources`, `type-access`). Cubre auth, CRUD, validaciones, ownership,
-time-range, exception filter, concurrencia con `Promise.all` (2 users, mismo
-user ×2, N=10, ganador verificado en DB), throttler, JWT inválido, y el
-control de acceso por tipo de recurso (`role_type_access`).
+- **Unitarios: 14 tests** (4 suites) — entidad `RefreshToken`, helpers de
+  token y casos de uso `RefreshTokenUseCase`/`LogoutUseCase` con repositorios
+  fake (incluye el camino de reuso).
+- **E2E: 78 tests** en 10 archivos (`resources`, `reservations`,
+  `exception-filter`, `concurrency`, `security`, `availability`, `users-roles`,
+  `type-resources`, `type-access`, `auth-sessions`).
+
+Cubren: auth, CRUD, validaciones, ownership, time-range, exception filter,
+concurrencia con `Promise.all` (2 users, mismo user ×2, N=10, ganador
+verificado en DB), throttler, JWT inválido, control de acceso por tipo de
+recurso (`role_type_access`), y **sesiones** (rotación de refresh, detección de
+reuso con revocación total y logout).
 
 ## Despliegue
 
@@ -311,18 +382,28 @@ control de acceso por tipo de recurso (`role_type_access`).
 3. Conectar repo y configurar variables de entorno:
    - `DATABASE_URL` → `${{Postgres.DATABASE_URL}}`
    - `JWT_SECRET` → valor fuerte (≥32 chars)
-   - `JWT_EXPIRES_IN` → `1h` (opcional)
+   - `JWT_EXPIRES_IN` → `15m` (opcional; access token corto)
+   - `REFRESH_TOKEN_TTL_DAYS` → `7` (opcional)
 4. **Configurar Release Command** (Settings → Deploy → Release Command):
 
    ```bash
    npm run db:migrate && npm run db:seed
    ```
 
-   Esto corre antes de cada deploy. Si solo es necesario migrar, usar
-   `npm run db:migrate`; el seed es idempotente (`onConflictDoNothing`).
+   Esto corre antes de cada deploy y aplica las migraciones `0000`–`0002`. Si
+   solo es necesario migrar, usar `npm run db:migrate`; el seed es idempotente
+   (`onConflictDoNothing`).
 5. Railway detecta `Dockerfile` y construye.
 
-> URL de producción se documenta una vez desplegado.
+### Servicio desplegado
+
+- **API:** <https://jorge-eiteck-prueba-tecnica-reservations-production.up.railway.app>
+- **Swagger UI:** <https://jorge-eiteck-prueba-tecnica-reservations-production.up.railway.app/api/docs>
+- **OpenAPI (JSON):** `.../api/docs-json`
+- **Health:** <https://jorge-eiteck-prueba-tecnica-reservations-production.up.railway.app/health>
+
+La documentación **OpenAPI/Swagger** expone y permite probar todos los
+endpoints (botón `Authorize` para enviar el JWT `Bearer`).
 
 > **Importante:** sin el Release Command, el contenedor arranca apuntando
 > a una DB sin tablas y `/health` devuelve 200 (es un `SELECT 1` que no
@@ -332,9 +413,8 @@ control de acceso por tipo de recurso (`role_type_access`).
 
 ```bash
 npm run start:dev     # dev con hot reload
-npm run build         # build a dist/
+npm run build         # build a dist/ (type-check estricto)
 npm run start:prod    # producción (node dist/main)
-npm run lint          # eslint
 npm test              # tests unitarios
 npm run test:e2e      # tests e2e
 npm run db:generate   # generar migración Drizzle desde el schema
@@ -353,3 +433,52 @@ Tras correr `npm run db:seed`:
 | `admin`     | `admin@eiteck.local`      | `admin123!` | Salas + Vehículos       |
 | `user`      | `user@eiteck.local`       | `user123!`  | Solo Salas              |
 | `user_plus` | `userplus@eiteck.local`   | `user123!`  | Salas + Vehículos       |
+
+## Cómo probar (evaluador)
+
+Base de producción:
+`https://jorge-eiteck-prueba-tecnica-reservations-production.up.railway.app`
+
+```bash
+BASE=https://jorge-eiteck-prueba-tecnica-reservations-production.up.railway.app
+
+# 1) Login: devuelve access_token + refresh_token
+curl -s -X POST $BASE/auth/login -H 'Content-Type: application/json' \
+  -d '{"email":"user@eiteck.local","password":"user123!"}'
+
+# 2) Token de user (requiere jq)
+ACCESS=$(curl -s -X POST $BASE/auth/login -H 'Content-Type: application/json' \
+  -d '{"email":"user@eiteck.local","password":"user123!"}' | jq -r .access_token)
+
+# 3) user ve SOLO salas
+curl -s $BASE/resources -H "Authorization: Bearer $ACCESS"
+
+# 4) user NO puede reservar un vehículo -> 403
+#    (ajustá resourceId al id real del vehículo: GET /resources con admin)
+curl -s -o /dev/null -w '%{http_code}\n' -X POST $BASE/reservations \
+  -H "Authorization: Bearer $ACCESS" -H 'Content-Type: application/json' \
+  -d '{"resourceId":3,"startTime":"2030-01-01T10:00:00.000Z","endTime":"2030-01-01T11:00:00.000Z"}'
+
+# 5) user_plus ve salas + vehículos
+ACCESS_PLUS=$(curl -s -X POST $BASE/auth/login -H 'Content-Type: application/json' \
+  -d '{"email":"userplus@eiteck.local","password":"user123!"}' | jq -r .access_token)
+curl -s $BASE/resources -H "Authorization: Bearer $ACCESS_PLUS"
+
+# 6) Rotación: /auth/refresh devuelve un refresh_token NUEVO
+REFRESH=$(curl -s -X POST $BASE/auth/login -H 'Content-Type: application/json' \
+  -d '{"email":"user@eiteck.local","password":"user123!"}' | jq -r .refresh_token)
+curl -s -X POST $BASE/auth/refresh -H 'Content-Type: application/json' \
+  -d "{\"refresh_token\":\"$REFRESH\"}"
+
+# 7) Reusar el refresh viejo -> 401 (y revoca todas las sesiones del usuario)
+curl -s -o /dev/null -w '%{http_code}\n' -X POST $BASE/auth/refresh \
+  -H 'Content-Type: application/json' -d "{\"refresh_token\":\"$REFRESH\"}"
+
+# 8) Logout -> 204
+curl -s -o /dev/null -w '%{http_code}\n' -X POST $BASE/auth/logout \
+  -H "Authorization: Bearer $ACCESS" -H 'Content-Type: application/json' \
+  -d "{\"refresh_token\":\"$REFRESH\"}"
+```
+
+> Atajo: todo lo anterior también se puede probar desde **Swagger** en
+> `/api/docs` (botón `Authorize` para enviar el JWT `Bearer`).
