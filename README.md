@@ -86,12 +86,19 @@ src/
 └── presentation/   # controllers, guards, filters, DTOs de entrada/salida
 ```
 
-**Dependency rule**:
+**Dependency rule** (con deuda conocida):
 
-- `presentation → domain ← data`
-- `domain` no importa nada de `data`, `presentation`, ni de frameworks
-  (sin `@nestjs/*`, sin `drizzle-orm`, sin `pg`). Es TypeScript puro.
-- Las reglas de negocio viven en `domain/`, no en controllers ni repositorios.
+- `presentation → domain ← data`: la dirección de dependencias apunta al
+  dominio; `presentation` y `data` dependen de las **interfaces** de `domain`,
+  no al revés.
+- Las reglas de negocio (entidades, value objects, casos de uso) viven en
+  `domain/`, no en controllers ni repositorios.
+- **Deuda conocida (honestidad):** no es "TypeScript puro" al 100%. Los casos de
+  uso usan decoradores/servicios de framework (`@nestjs/common`, `@nestjs/jwt`,
+  `@nestjs/config`) y `create-reservation.use-case` abre su transacción con
+  Drizzle/`data` en lugar de delegar en `IReservationRepository`. Es la
+  simplificación aceptada para 4 días; el refactor para aislar el dominio está
+  identificado como deuda (ver Nivel 3 en "Supuestos y trade-offs").
 
 ## Decisiones de diseño
 
@@ -135,16 +142,18 @@ src/
 - **Contexto:** el enunciado pide "consultar los recursos que puede utilizar"
   y "aplicación de permisos según el tipo de usuario".
 - **Decisión:** tabla `roles` con FK desde `users.role_id` (1:N) + tabla puente
-  `role_type_access` (M:N entre `roles` y `type_resources`). **El acceso a cada
-  tipo de recurso se resuelve 100% desde `role_type_access`**, sin hardcodear
-  nombres de rol en el código.
-- **Cómo funciona:**
-  - Cada rol tiene un conjunto de `type_resource` permitidos.
-  - `GET /resources` filtra los recursos por los tipos permitidos del rol.
-  - `GET /resources/:id`, `GET /resources/:id/availability` y
-    `POST /reservations` devuelven **403** si el tipo no está permitido.
-  - No hay `if (roleName === 'admin')`: admin ve todo porque el seed le
-    asigna ambos tipos en `role_type_access`.
+  `role_type_access` (M:N entre `roles` y `type_resources`).
+- **Cómo funciona — plano de datos (data-driven):**
+  - El acceso a cada **tipo de recurso** se resuelve desde `role_type_access`,
+    sin condicionales por nombre de rol: `GET /resources` filtra por los tipos
+    permitidos del rol, y `GET /resources/:id`, `GET /resources/:id/availability`
+    y `POST /reservations` devuelven **403** si el tipo no está permitido.
+  - admin ve todo porque el seed le asigna ambos tipos en `role_type_access`.
+- **Plano de gestión (distinto):** los endpoints administrativos (`POST
+  /resources`, `PATCH /:id/status`, `GET /users`) se protegen con
+  `@Roles('admin')`, es decir, por **nombre de rol**. Son dos planos separados:
+  acceso a datos (data-driven) vs administración (rol). Migrar la gestión a
+  permisos de acción (`role_permissions`) queda como extensión documentada.
 - **Perfiles sembrados:**
   - `admin@eiteck.local` → todos los tipos (salas + vehículos).
   - `user@eiteck.local` → solo "Sala de reuniones".
@@ -200,6 +209,14 @@ src/
   `GET /users`) siguen usando `@Roles('admin')` como **plano de gestión**; un
   RBAC por permisos de acción (`role_permissions`) queda documentado como
   extensión.
+- **Deuda técnica identificada (no bloqueante):**
+  - `domain` acoplado a framework: los casos de uso usan `@nestjs/*` y
+    `create-reservation` abre su transacción con Drizzle; el refactor es
+    escribir vía `IReservationRepository` e inyectar puertos propios.
+  - Plano de gestión por nombre de rol (`@Roles('admin')`).
+  - Invalidación inmediata del access token (token-version/denylist).
+  - Auto-setup (migrate+seed) asume **instancia única**; para múltiples
+    réplicas haría falta `pg_advisory_lock` o un Release Command.
 - **Observabilidad**: solo pino con redacción. Sin tracing ni métricas
   avanzadas.
 - **CI**: pendiente de justificación; se agrega si entra en el cronograma.
@@ -295,6 +312,11 @@ Notas del modelo:
   pueden tener ambos éxito.
 - Índice `(user_id, revoked_at)` para revocar todas las sesiones de un usuario
   ante reuso; índice `(expires_at)` para limpieza de tokens expirados.
+- Política de reuso **estricta**: presentar un refresh ya consumido revoca
+  **todas** las sesiones del usuario (preventivo ante robo de token). Efecto
+  colateral aceptado: un reintento concurrente del mismo token (p. ej. mala
+  señal o dos pestañas) también cierra la sesión. Una ventana de gracia /
+  replay idempotente que devuelva el mismo par queda como mejora futura.
 
 ### Anti-solapamiento: EXCLUDE constraint
 
@@ -383,15 +405,17 @@ npm run test:cov
 - **Unitarios: 14 tests** (4 suites) — entidad `RefreshToken`, helpers de
   token y casos de uso `RefreshTokenUseCase`/`LogoutUseCase` con repositorios
   fake (incluye el camino de reuso).
-- **E2E: 78 tests** en 10 archivos (`resources`, `reservations`,
+- **E2E: 81 tests** en 12 archivos (`resources`, `reservations`,
   `exception-filter`, `concurrency`, `security`, `availability`, `users-roles`,
-  `type-resources`, `type-access`, `auth-sessions`).
+  `type-resources`, `type-access`, `auth-sessions`, `auth-refresh-advanced`,
+  `throttler`).
 
 Cubren: auth, CRUD, validaciones, ownership, time-range, exception filter,
 concurrencia con `Promise.all` (2 users, mismo user ×2, N=10, ganador
-verificado en DB), throttler, JWT inválido, control de acceso por tipo de
-recurso (`role_type_access`), y **sesiones** (rotación de refresh, detección de
-reuso con revocación total y logout).
+verificado en DB), **throttler (429)**, JWT inválido, control de acceso por
+tipo de recurso (`role_type_access`), y **sesiones** (rotación de refresh,
+expiración, **refresh concurrente** con detección de reuso/revocación total, y
+logout).
 
 ## Despliegue
 
