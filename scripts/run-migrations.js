@@ -4,6 +4,10 @@ const postgres = require('postgres');
 const { drizzle } = require('drizzle-orm/postgres-js');
 const { migrate } = require('drizzle-orm/postgres-js/migrator');
 
+// Clave de advisory lock compartida con el seed para serializar el setup de DB
+// entre arranques concurrentes (varias réplicas).
+const DB_SETUP_LOCK_KEY = 727001;
+
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function waitForDb(client, attempts = 10, delayMs = 2000) {
@@ -30,10 +34,16 @@ async function main() {
   const client = postgres(url, { max: 1 });
   try {
     await waitForDb(client);
-    const db = drizzle(client);
-    const migrationsFolder = path.join(__dirname, '..', 'src', 'data', 'migrations');
-    await migrate(db, { migrationsFolder });
-    console.log('[migrate] Migraciones aplicadas');
+    // Serializa la migración entre instancias que arrancan a la vez.
+    await client`SELECT pg_advisory_lock(${DB_SETUP_LOCK_KEY})`;
+    try {
+      const db = drizzle(client);
+      const migrationsFolder = path.join(__dirname, '..', 'src', 'data', 'migrations');
+      await migrate(db, { migrationsFolder });
+      console.log('[migrate] Migraciones aplicadas');
+    } finally {
+      await client`SELECT pg_advisory_unlock(${DB_SETUP_LOCK_KEY})`;
+    }
   } finally {
     await client.end();
   }

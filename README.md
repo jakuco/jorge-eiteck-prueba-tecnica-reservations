@@ -95,10 +95,11 @@ src/
   `domain/`, no en controllers ni repositorios.
 - **Deuda conocida (honestidad):** no es "TypeScript puro" al 100%. Los casos de
   uso usan decoradores/servicios de framework (`@nestjs/common`, `@nestjs/jwt`,
-  `@nestjs/config`) y `create-reservation.use-case` abre su transacción con
-  Drizzle/`data` en lugar de delegar en `IReservationRepository`. Es la
-  simplificación aceptada para 4 días; el refactor para aislar el dominio está
-  identificado como deuda (ver Nivel 3 en "Supuestos y trade-offs").
+  `@nestjs/config`). La **persistencia no se filtra al dominio**:
+  `create-reservation` delega la transacción y la traducción del error de
+  exclusión (`23P01 → 409`) en `IReservationRepository`/infraestructura. La
+  dependencia restante con `@nestjs/*` es la interpretación pragmática para 4
+  días (ver "Supuestos y trade-offs").
 
 ## Decisiones de diseño
 
@@ -210,13 +211,12 @@ src/
   RBAC por permisos de acción (`role_permissions`) queda documentado como
   extensión.
 - **Deuda técnica identificada (no bloqueante):**
-  - `domain` acoplado a framework: los casos de uso usan `@nestjs/*` y
-    `create-reservation` abre su transacción con Drizzle; el refactor es
-    escribir vía `IReservationRepository` e inyectar puertos propios.
+  - `domain` todavía usa decoradores de `@nestjs/*` (se mantiene la inversión
+    de dependencias con `data`: la persistencia se resuelve vía repositorios).
   - Plano de gestión por nombre de rol (`@Roles('admin')`).
   - Invalidación inmediata del access token (token-version/denylist).
-  - Auto-setup (migrate+seed) asume **instancia única**; para múltiples
-    réplicas haría falta `pg_advisory_lock` o un Release Command.
+- **Resuelto:** auto-setup (migrate + seed) serializado con `pg_advisory_lock`,
+  por lo que tolera arranques concurrentes (múltiples réplicas).
 - **Observabilidad**: solo pino con redacción. Sin tracing ni métricas
   avanzadas.
 - **CI**: pendiente de justificación; se agrega si entra en el cronograma.

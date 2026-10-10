@@ -1,5 +1,5 @@
 import { drizzle } from 'drizzle-orm/postgres-js';
-import postgres from 'postgres';
+import postgres, { type Sql } from 'postgres';
 import * as bcrypt from 'bcrypt';
 import * as schema from '../schema';
 import {
@@ -10,8 +10,22 @@ import {
   users,
 } from '../schema';
 
+// Misma clave que scripts/run-migrations.js: serializa el setup de DB entre
+// arranques concurrentes (varias réplicas).
+const DB_SETUP_LOCK_KEY = 727001;
+
 export async function runSeed(connectionString: string): Promise<void> {
   const client = postgres(connectionString, { max: 1 });
+  await client`SELECT pg_advisory_lock(${DB_SETUP_LOCK_KEY})`;
+  try {
+    await seed(client);
+  } finally {
+    await client`SELECT pg_advisory_unlock(${DB_SETUP_LOCK_KEY})`;
+    await client.end();
+  }
+}
+
+async function seed(client: Sql): Promise<void> {
   const db = drizzle(client, { schema });
 
   console.log('[seed] Insertando roles...');
@@ -117,7 +131,6 @@ export async function runSeed(connectionString: string): Promise<void> {
     .onConflictDoNothing();
 
   console.log('[seed] Listo ✓');
-  await client.end();
 }
 
 if (require.main === module) {
