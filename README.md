@@ -137,35 +137,35 @@ src/
 - **Por qué:** setup mínimo para Node + Postgres, plan free alcanza para
   evaluación.
 
-### D4 — RBAC por tipo de recurso (M:N)
+### D4 — RBAC data-driven (roles, tipos y permisos)
 
-- **Fecha:** 2026-10-08 (actualizado 2026-10-09)
-- **Contexto:** el enunciado pide "consultar los recursos que puede utilizar"
-  y "aplicación de permisos según el tipo de usuario".
-- **Decisión:** tabla `roles` con FK desde `users.role_id` (1:N) + tabla puente
-  `role_type_access` (M:N entre `roles` y `type_resources`).
-- **Cómo funciona — plano de datos (data-driven):**
-  - El acceso a cada **tipo de recurso** se resuelve desde `role_type_access`,
-    sin condicionales por nombre de rol: `GET /resources` filtra por los tipos
-    permitidos del rol, y `GET /resources/:id`, `GET /resources/:id/availability`
-    y `POST /reservations` devuelven **403** si el tipo no está permitido.
-  - admin ve todo porque el seed le asigna ambos tipos en `role_type_access`.
-- **Plano de gestión (distinto):** los endpoints administrativos (`POST
-  /resources`, `PATCH /:id/status`, `GET /users`) se protegen con
-  `@Roles('admin')`, es decir, por **nombre de rol**. Son dos planos separados:
-  acceso a datos (data-driven) vs administración (rol). Migrar la gestión a
-  permisos de acción (`role_permissions`) queda como extensión documentada.
+- **Fecha:** 2026-10-08 (actualizado 2026-10-09/10)
+- **Contexto:** el enunciado pide "consultar los recursos que puede utilizar" y
+  "aplicación de permisos según el tipo de usuario".
+- **Decisión:** `roles` con FK desde `users.role_id` (1:N) + **dos** tablas
+  puente:
+  - `role_type_access` (M:N roles ↔ type_resources): qué **tipos de recurso**
+    ve/reserva cada rol.
+  - `role_permissions` (M:N roles ↔ permissions): qué **acciones de gestión**
+    puede ejecutar cada rol.
+- **Plano de datos (data-driven):** el acceso a cada tipo se resuelve desde
+  `role_type_access`, sin condicionales por nombre de rol: `GET /resources`
+  filtra por los tipos permitidos, y `GET /resources/:id`, `/availability` y
+  `POST /reservations` devuelven **403** si el tipo no está permitido.
+- **Plano de gestión (data-driven):** los endpoints administrativos se protegen
+  con `@RequirePermission(...)` y el `PermissionsGuard`, que resuelve los
+  permisos del rol desde `role_permissions` **en cada request** (sin hardcodear
+  nombres de rol):
+  - `resources:manage` → `POST /resources`, `PATCH /resources/:id/status`.
+  - `users:read` → `GET /users`.
+  - `reservations:read:all` → ver las reservas de todos.
+  - `reservations:cancel:any` → cancelar reservas de cualquier usuario.
 - **Perfiles sembrados:**
-  - `admin@eiteck.local` → todos los tipos (salas + vehículos).
-  - `user@eiteck.local` → solo "Sala de reuniones".
+  - `admin@eiteck.local` → todos los tipos + los 4 permisos.
+  - `user@eiteck.local` → solo "Sala de reuniones" (sin permisos de gestión).
   - `userplus@eiteck.local` → "Sala de reuniones" + "Vehículo".
-- **Por qué:**
-  - El spec pide permisos según el tipo de usuario/relación con la información.
-  - M:N permite reglas por categoría sin `text[]` ni tablas por permiso.
-  - Data-driven: cambiar permisos es cambiar una fila, no un guard.
-- **Extensibilidad:** para permisos granulares por acción se agregan tablas
-  `permissions` y `role_permissions` apuntando a `roles.id`; la FK
-  `users.role_id` no se toca.
+- **Por qué:** cambiar accesos/permisos es cambiar una fila, no un guard ni
+  código; no hay `if (roleName === 'admin')` en ningún lado.
 
 ### D5 — Sesiones: refresh tokens rotativos persistidos
 
@@ -204,16 +204,13 @@ src/
   (≤15 min)**. Mitigación propuesta: revalidar rol/usuario en `validate()` o
   token-version. La **renovación y el cierre de sesión** sí están resueltos con
   refresh tokens rotativos (ver D5).
-- **Dos planos de autorización**: `role_type_access` gobierna el **plano de
-  datos** (qué tipos de recurso se ven/reservan) de forma 100% data-driven. Los
-  endpoints de administración (`POST /resources`, `PATCH /:id/status`,
-  `GET /users`) siguen usando `@Roles('admin')` como **plano de gestión**; un
-  RBAC por permisos de acción (`role_permissions`) queda documentado como
-  extensión.
+- **Dos planos de autorización**: ambos data-driven. `role_type_access`
+  gobierna el **plano de datos** (qué tipos de recurso se ven/reservan) y
+  `role_permissions` el **plano de gestión** (qué acciones administrativas se
+  pueden ejecutar). Ninguno usa nombres de rol en el código.
 - **Deuda técnica identificada (no bloqueante):**
   - `domain` todavía usa decoradores de `@nestjs/*` (se mantiene la inversión
     de dependencias con `data`: la persistencia se resuelve vía repositorios).
-  - Plano de gestión por nombre de rol (`@Roles('admin')`).
   - Invalidación inmediata del access token (token-version/denylist).
 - **Resuelto:** auto-setup (migrate + seed) serializado con `pg_advisory_lock`,
   por lo que tolera arranques concurrentes (múltiples réplicas).
@@ -223,7 +220,7 @@ src/
 
 ## PostgreSQL / SQL
 
-### Modelo de datos (7 tablas)
+### Modelo de datos (9 tablas)
 
 El siguiente diagrama de entidades (Mermaid) resume el modelo relacional:
 
@@ -236,6 +233,8 @@ erDiagram
     resources ||--o{ reservations : "reservado"
     users ||--o{ reservations : "solicita"
     users ||--o{ refresh_tokens : "sesiones"
+    roles ||--o{ role_permissions : "otorga"
+    permissions ||--o{ role_permissions : "concede"
 
     roles {
         int id PK
@@ -292,12 +291,23 @@ erDiagram
         varchar ip
         timestamptz created_at
     }
+    permissions {
+        int id PK
+        varchar name UK
+        text description
+    }
+    role_permissions {
+        int role_id PK,FK
+        int permission_id PK,FK
+    }
 ```
 
 Notas del modelo:
 
 - `role_type_access` es **PK compuesta** (`role_id`, `type_resource_id`); define
   qué tipos de recurso puede ver/reservar cada rol.
+- `role_permissions` es **PK compuesta** (`role_id`, `permission_id`); define
+  qué acciones de gestión puede ejecutar cada rol (ver D4).
 - `refresh_tokens.replaced_by_id` es **auto-referencia** (cadena de rotación).
 - `refresh_tokens.revoked_at` marca la revocación; `token_hash` tiene índice
   único.
@@ -405,17 +415,18 @@ npm run test:cov
 - **Unitarios: 14 tests** (4 suites) — entidad `RefreshToken`, helpers de
   token y casos de uso `RefreshTokenUseCase`/`LogoutUseCase` con repositorios
   fake (incluye el camino de reuso).
-- **E2E: 81 tests** en 12 archivos (`resources`, `reservations`,
+- **E2E: 82 tests** en 13 archivos (`resources`, `reservations`,
   `exception-filter`, `concurrency`, `security`, `availability`, `users-roles`,
   `type-resources`, `type-access`, `auth-sessions`, `auth-refresh-advanced`,
-  `throttler`).
+  `throttler`, `authz-permissions`).
 
 Cubren: auth, CRUD, validaciones, ownership, time-range, exception filter,
 concurrencia con `Promise.all` (2 users, mismo user ×2, N=10, ganador
 verificado en DB), **throttler (429)**, JWT inválido, control de acceso por
-tipo de recurso (`role_type_access`), y **sesiones** (rotación de refresh,
-expiración, **refresh concurrente** con detección de reuso/revocación total, y
-logout).
+tipo de recurso (`role_type_access`), **autorización por permisos de gestión**
+(`role_permissions`, probando otorgar/quitar el permiso en DB), y **sesiones**
+(rotación de refresh, expiración, **refresh concurrente** con detección de
+reuso/revocación total, y logout).
 
 ## Despliegue
 
