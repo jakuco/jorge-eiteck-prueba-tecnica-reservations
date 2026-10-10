@@ -12,6 +12,8 @@ import {
   NewReservationData,
   ReservationFilters,
 } from '../../domain/repositories/reservation.repository.interface';
+import { isExclusionViolation } from '../../domain/helpers/db-errors';
+import { ReservationOverlapError } from '../../domain/errors/reservation-overlap.error';
 
 @Injectable()
 export class DrizzleReservationRepository implements IReservationRepository {
@@ -82,17 +84,30 @@ export class DrizzleReservationRepository implements IReservationRepository {
   }
 
   async create(data: NewReservationData): Promise<Reservation> {
-    const [r] = await this.db
-      .insert(reservations)
-      .values({
-        resourceId: data.resourceId,
-        userId: data.userId,
-        startTime: data.startTime,
-        endTime: data.endTime,
-        status: 'confirmed',
-      })
-      .returning();
-    return this.toDomain(r);
+    // La transacción y la traducción del error de exclusión (23P01 → dominio)
+    // viven en infraestructura: el caso de uso solo conoce la abstracción.
+    return this.db.transaction(async (tx) => {
+      try {
+        const [r] = await tx
+          .insert(reservations)
+          .values({
+            resourceId: data.resourceId,
+            userId: data.userId,
+            startTime: data.startTime,
+            endTime: data.endTime,
+            status: 'confirmed',
+          })
+          .returning();
+        return this.toDomain(r);
+      } catch (err) {
+        if (isExclusionViolation(err)) {
+          throw new ReservationOverlapError(
+            'El recurso ya está reservado en ese horario',
+          );
+        }
+        throw err;
+      }
+    });
   }
 
   async setStatus(id: number, status: ReservationStatus): Promise<Reservation> {
