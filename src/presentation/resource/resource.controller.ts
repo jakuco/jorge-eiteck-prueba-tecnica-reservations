@@ -24,9 +24,10 @@ import { CreateResourceUseCase } from '../../domain/use-cases/resource/create-re
 import { GetResourceUseCase } from '../../domain/use-cases/resource/get-resource.use-case';
 import { ListResourcesUseCase } from '../../domain/use-cases/resource/list-resources.use-case';
 import { UpdateResourceStatusUseCase } from '../../domain/use-cases/resource/update-resource-status.use-case';
-import { Roles } from '../auth/decorators/roles.decorator';
+import { RequirePermission } from '../auth/decorators/require-permission.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { JwtPayload } from '../auth/strategies/jwt.strategy';
+import { PERMISSIONS } from '../../domain/authz/permissions';
 
 @ApiTags('resources')
 @ApiBearerAuth()
@@ -71,17 +72,17 @@ export class ResourceController {
   }
 
   @Post()
-  @Roles('admin')
+  @RequirePermission(PERMISSIONS.RESOURCES_MANAGE)
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({
-    summary: 'Crear un recurso (solo admin)',
+    summary: 'Crear un recurso (requiere permiso resources:manage)',
     description:
       'Crea un nuevo recurso. El typeId debe existir en type_resources.',
   })
   @ApiResponse({ status: 201, description: 'Recurso creado' })
   @ApiResponse({ status: 400, description: 'Datos inválidos o typeId inexistente' })
   @ApiResponse({ status: 401, description: 'No autenticado' })
-  @ApiResponse({ status: 403, description: 'No es admin' })
+  @ApiResponse({ status: 403, description: 'Sin el permiso resources:manage' })
   create(
     @Body() dto: CreateResourceDto,
     @CurrentUser() user: JwtPayload,
@@ -90,16 +91,16 @@ export class ResourceController {
   }
 
   @Patch(':id/status')
-  @Roles('admin')
+  @RequirePermission(PERMISSIONS.RESOURCES_MANAGE)
   @ApiOperation({
-    summary: 'Cambiar estado de un recurso (solo admin)',
+    summary: 'Cambiar estado de un recurso (requiere permiso resources:manage)',
     description:
       'Habilita o deshabilita un recurso. Idempotente: si el estado ya es el solicitado, no hace nada.',
   })
   @ApiResponse({ status: 200, description: 'Recurso actualizado' })
   @ApiResponse({ status: 400, description: 'Status inválido' })
   @ApiResponse({ status: 401, description: 'No autenticado' })
-  @ApiResponse({ status: 403, description: 'No es admin' })
+  @ApiResponse({ status: 403, description: 'Sin el permiso resources:manage' })
   @ApiResponse({ status: 404, description: 'Recurso no encontrado' })
   updateStatus(
     @Param('id', ParseIntPipe) id: number,

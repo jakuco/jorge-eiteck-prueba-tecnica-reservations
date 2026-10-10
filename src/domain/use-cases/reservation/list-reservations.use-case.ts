@@ -12,7 +12,7 @@ import { RESERVATION_REPOSITORY } from './cancel-reservation.use-case';
 
 export interface ListReservationsInput {
   actingUserId: number;
-  isAdmin: boolean;
+  canReadAll: boolean;
   filters: ReservationFilters;
   pagination?: PaginationParams;
 }
@@ -28,7 +28,7 @@ export class ListReservationsUseCase {
     input: ListReservationsInput,
   ): Promise<PaginatedResult<Reservation>> {
     const filters: ReservationFilters = { ...input.filters };
-    if (!input.isAdmin) {
+    if (!input.canReadAll) {
       filters.userId = input.actingUserId;
     }
     return this.reservationRepo.findMany(filters, input.pagination);

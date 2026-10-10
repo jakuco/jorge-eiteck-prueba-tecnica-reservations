@@ -11,16 +11,4 @@ export class User {
     public readonly createdAt: Date,
     public readonly updatedAt: Date,
   ) {}
-
-  isAdmin(): boolean {
-    return this.role.isAdmin();
-  }
-
-  canManageResources(): boolean {
-    return this.role.isAdmin();
-  }
-
-  canCancelReservation(reservationUserId: number): boolean {
-    return this.id === reservationUserId || this.isAdmin();
-  }
 }

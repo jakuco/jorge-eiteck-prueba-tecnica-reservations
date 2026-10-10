@@ -12,7 +12,7 @@ export const RESERVATION_REPOSITORY = Symbol('IReservationRepository');
 export interface CancelReservationInput {
   reservationId: number;
   actingUserId: number;
-  isAdmin: boolean;
+  canCancelAny: boolean;
 }
 
 @Injectable()
@@ -30,7 +30,7 @@ export class CancelReservationUseCase {
       );
     }
 
-    if (!input.isAdmin && reservation.userId !== input.actingUserId) {
+    if (!input.canCancelAny && reservation.userId !== input.actingUserId) {
       throw new ForbiddenException(
         'No podés cancelar reservas de otro usuario',
       );

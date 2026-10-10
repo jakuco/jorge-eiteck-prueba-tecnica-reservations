@@ -3,12 +3,18 @@ import postgres, { type Sql } from 'postgres';
 import * as bcrypt from 'bcrypt';
 import * as schema from '../schema';
 import {
+  permissions,
   resources,
+  rolePermissions,
   roleTypeAccess,
   roles,
   typeResources,
   users,
 } from '../schema';
+import {
+  ALL_PERMISSIONS,
+  PERMISSION_DESCRIPTIONS,
+} from '../../domain/authz/permissions';
 
 // Misma clave que scripts/run-migrations.js: serializa el setup de DB entre
 // arranques concurrentes (varias réplicas).
@@ -50,8 +56,25 @@ async function seed(client: Sql): Promise<void> {
     ])
     .onConflictDoNothing();
 
+  console.log('[seed] Insertando permisos de gestión...');
+  await db
+    .insert(permissions)
+    .values(
+      ALL_PERMISSIONS.map((name) => ({
+        name,
+        description: PERMISSION_DESCRIPTIONS[name],
+      })),
+    )
+    .onConflictDoNothing();
+
   const allRoles = await db.select().from(roles);
   const allTypes = await db.select().from(typeResources);
+  const allPermissions = await db.select().from(permissions);
+
+  const permissionIdByName = new Map(allPermissions.map((p) => [p.name, p.id]));
+  const adminPermissionIds = ALL_PERMISSIONS.map((name) =>
+    permissionIdByName.get(name),
+  ).filter((id): id is number => id !== undefined);
 
   const adminRole = allRoles.find((r) => r.name === 'admin');
   const userRole = allRoles.find((r) => r.name === 'user');
@@ -78,6 +101,17 @@ async function seed(client: Sql): Promise<void> {
   await db.transaction(async (tx) => {
     await tx.delete(roleTypeAccess);
     await tx.insert(roleTypeAccess).values(accessMatrix);
+
+    // Permisos de gestión: solo admin (data-driven, no por nombre de rol).
+    await tx.delete(rolePermissions);
+    if (adminPermissionIds.length > 0) {
+      await tx.insert(rolePermissions).values(
+        adminPermissionIds.map((permissionId) => ({
+          roleId: adminRole.id,
+          permissionId,
+        })),
+      );
+    }
   });
 
   console.log('[seed] Insertando usuarios de prueba...');

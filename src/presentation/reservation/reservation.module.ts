@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { AuthModule } from '../auth/auth.module';
 import { ReservationController } from './reservation.controller';
 import { AvailabilityController } from './availability.controller';
 import { CreateReservationUseCase } from '../../domain/use-cases/reservation/create-reservation.use-case';
@@ -12,6 +13,7 @@ import { RESOURCE_REPOSITORY } from '../../domain/use-cases/reservation/create-r
 import { ROLE_REPOSITORY } from '../../domain/use-cases/role/list-roles.use-case';
 
 @Module({
+  imports: [AuthModule],
   controllers: [ReservationController, AvailabilityController],
   providers: [
     CreateReservationUseCase,

@@ -19,6 +19,8 @@ import {
 import { CancelReservationUseCase } from '../../domain/use-cases/reservation/cancel-reservation.use-case';
 import { CreateReservationUseCase } from '../../domain/use-cases/reservation/create-reservation.use-case';
 import { ListReservationsUseCase } from '../../domain/use-cases/reservation/list-reservations.use-case';
+import { GetActorPermissionsUseCase } from '../../domain/use-cases/auth/get-actor-permissions.use-case';
+import { PERMISSIONS } from '../../domain/authz/permissions';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { JwtPayload } from '../auth/strategies/jwt.strategy';
 import { CreateReservationDto } from './dto/create-reservation.dto';
@@ -32,6 +34,7 @@ export class ReservationController {
     private readonly createReservation: CreateReservationUseCase,
     private readonly listReservations: ListReservationsUseCase,
     private readonly cancelReservation: CancelReservationUseCase,
+    private readonly getPermissions: GetActorPermissionsUseCase,
   ) {}
 
   @Post()
@@ -65,18 +68,19 @@ export class ReservationController {
   @ApiOperation({
     summary: 'Listar reservas',
     description:
-      'Lista reservas. Los usuarios no-admin solo ven las propias; los admin ven todas. Soporta filtros y paginación.',
+      'Lista reservas. Sin el permiso reservations:read:all solo se ven las propias. Soporta filtros y paginación.',
   })
   @ApiResponse({ status: 200, description: 'Lista paginada de reservas' })
   @ApiResponse({ status: 401, description: 'No autenticado' })
-  list(
+  async list(
     @Query() query: ListReservationsQueryDto,
     @CurrentUser() user: JwtPayload,
   ) {
     const { page, pageSize, from, to, ...filters } = query;
+    const permissions = await this.getPermissions.execute(user.roleId);
     return this.listReservations.execute({
       actingUserId: user.sub,
-      isAdmin: user.roleName === 'admin',
+      canReadAll: permissions.includes(PERMISSIONS.RESERVATIONS_READ_ALL),
       filters: {
         ...filters,
         startTimeGte: from ? new Date(from) : undefined,
@@ -91,20 +95,21 @@ export class ReservationController {
   @ApiOperation({
     summary: 'Cancelar una reserva',
     description:
-      'Cancela una reserva. Un user solo puede cancelar las propias; admin puede cancelar cualquiera. Idempotente.',
+      'Cancela una reserva. Sin el permiso reservations:cancel:any solo se pueden cancelar las propias. Idempotente.',
   })
   @ApiResponse({ status: 200, description: 'Reserva cancelada' })
   @ApiResponse({ status: 401, description: 'No autenticado' })
-  @ApiResponse({ status: 403, description: 'No es dueño ni admin' })
+  @ApiResponse({ status: 403, description: 'No es dueño ni tiene reservations:cancel:any' })
   @ApiResponse({ status: 404, description: 'Reserva no encontrada' })
-  cancel(
+  async cancel(
     @Param('id', ParseIntPipe) id: number,
     @CurrentUser() user: JwtPayload,
   ) {
+    const permissions = await this.getPermissions.execute(user.roleId);
     return this.cancelReservation.execute({
       reservationId: id,
       actingUserId: user.sub,
-      isAdmin: user.roleName === 'admin',
+      canCancelAny: permissions.includes(PERMISSIONS.RESERVATIONS_CANCEL_ANY),
     });
   }
 }

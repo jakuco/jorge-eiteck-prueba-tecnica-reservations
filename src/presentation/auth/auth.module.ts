@@ -7,7 +7,7 @@ import { APP_GUARD } from '@nestjs/core';
 import { AuthController } from './auth.controller';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
-import { RolesGuard } from './guards/roles.guard';
+import { PermissionsGuard } from './guards/permissions.guard';
 import {
   LoginUseCase,
   USER_REPOSITORY,
@@ -15,8 +15,13 @@ import {
 } from '../../domain/use-cases/auth/login.use-case';
 import { RefreshTokenUseCase } from '../../domain/use-cases/auth/refresh-token.use-case';
 import { LogoutUseCase } from '../../domain/use-cases/auth/logout.use-case';
+import {
+  GetActorPermissionsUseCase,
+  PERMISSION_REPOSITORY,
+} from '../../domain/use-cases/auth/get-actor-permissions.use-case';
 import { DrizzleUserRepository } from '../../data/repositories/drizzle-user.repository';
 import { DrizzleRefreshTokenRepository } from '../../data/repositories/drizzle-refresh-token.repository';
+import { DrizzlePermissionRepository } from '../../data/repositories/drizzle-permission.repository';
 
 @Module({
   imports: [
@@ -35,15 +40,20 @@ import { DrizzleRefreshTokenRepository } from '../../data/repositories/drizzle-r
     LoginUseCase,
     RefreshTokenUseCase,
     LogoutUseCase,
+    GetActorPermissionsUseCase,
     { provide: USER_REPOSITORY, useClass: DrizzleUserRepository },
     {
       provide: REFRESH_TOKEN_REPOSITORY,
       useClass: DrizzleRefreshTokenRepository,
     },
+    {
+      provide: PERMISSION_REPOSITORY,
+      useClass: DrizzlePermissionRepository,
+    },
     JwtStrategy,
     { provide: APP_GUARD, useClass: JwtAuthGuard },
-    { provide: APP_GUARD, useClass: RolesGuard },
+    { provide: APP_GUARD, useClass: PermissionsGuard },
   ],
-  exports: [JwtModule],
+  exports: [JwtModule, GetActorPermissionsUseCase],
 })
 export class AuthModule {}
