@@ -28,29 +28,53 @@ superpuestas, autenticación JWT, control de acceso por rol y trazabilidad.
 
 ## Ejecución local
 
-### Con Docker Compose (recomendado)
+Requisitos: Node 22+, un Postgres (el de `docker-compose` o uno propio) y:
 
 ```bash
 cp .env.example .env
-# Editar JWT_SECRET en .env con un valor real (openssl rand -base64 48)
+# Editar JWT_SECRET en .env (openssl rand -base64 48)
+npm install
+```
 
+### 1. Levantar PostgreSQL
+
+```bash
+docker compose up -d postgres   # localhost:5434 (user: eiteck / pass: eiteck_dev_password)
+# o usar un Postgres propio y ajustar DATABASE_URL
+```
+
+### 2. Aplicar esquema y datos de prueba (una vez)
+
+```bash
+npm run build          # genera dist/ que usa el seed
+export DATABASE_URL=postgresql://eiteck:eiteck_dev_password@localhost:5434/eiteck_reservations
+npm run db:migrate     # migraciones 0000–0002
+npm run db:seed        # roles, tipos, usuarios y recursos de prueba
+```
+
+### 3. Levantar la API
+
+**Docker Compose (recomendado):**
+
+```bash
 docker compose up --build
 ```
 
-Servicios levantados:
+**Modo dev nativo:**
+
+```bash
+npm run start:dev
+```
+
+Servicios:
 
 - **API**: <http://localhost:3000>
 - **Swagger**: <http://localhost:3000/api/docs>
-- **Postgres**: `localhost:5434` (user: `eiteck`, pass: `eiteck_dev_password`, db: `eiteck_reservations`)
+- **Postgres**: `localhost:5434`
 
-### Sin Docker (modo dev nativo)
-
-```bash
-cp .env.example .env
-# Apuntar DATABASE_URL a un Postgres local
-npm install
-npm run start:dev
-```
+> En local el contenedor **no** aplica migraciones ni seed (eso lo hace el
+> `Dockerfile` de producción al arrancar); por eso el paso 2 es manual. En
+> Railway el contenedor migra y siembra automáticamente.
 
 ## Variables de entorno
 
@@ -359,6 +383,17 @@ npm run test:e2e
 # Coverage
 npm run test:cov
 ```
+
+> **Prerequisito de los e2e:** corren contra una base real (Postgres con
+> esquema y datos). Antes de `npm run test:e2e`, aplicar migraciones y seed
+> (`npm run db:migrate && npm run db:seed`) y exportar:
+>
+> ```bash
+> export DATABASE_URL=postgresql://eiteck:eiteck_dev_password@localhost:5434/eiteck_reservations
+> export JWT_SECRET=local_validation_secret_at_least_32_chars_long_aaa
+> ```
+>
+> Los unitarios (`npm test`) no requieren base de datos.
 
 - **Unitarios: 14 tests** (4 suites) — entidad `RefreshToken`, helpers de
   token y casos de uso `RefreshTokenUseCase`/`LogoutUseCase` con repositorios

@@ -30,8 +30,11 @@ services:
       NODE_ENV: development
       PORT: 3000
       DATABASE_URL: postgresql://eiteck:eiteck_dev_password@postgres:5432/eiteck_reservations
-      JWT_SECRET: dev_secret_only_for_local_docker_replace_in_env_file_aaa
-      JWT_EXPIRES_IN: 1h
+      # Toma JWT_SECRET del .env (Compose interpola desde el .env del proyecto);
+      # si no está definido, usa un valor de desarrollo.
+      JWT_SECRET: ${JWT_SECRET:-dev_secret_only_for_local_docker_replace_in_env_file_aaa}
+      JWT_EXPIRES_IN: 15m
+      REFRESH_TOKEN_TTL_DAYS: 7
     ports:
       - "3000:3000"
     volumes:
