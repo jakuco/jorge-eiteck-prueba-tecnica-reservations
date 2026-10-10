@@ -28,53 +28,38 @@ superpuestas, autenticación JWT, control de acceso por rol y trazabilidad.
 
 ## Ejecución local
 
-Requisitos: Node 22+, un Postgres (el de `docker-compose` o uno propio) y:
+Requisitos: Node 22+ y Docker (para el Postgres o el stack completo).
+
+### Opción A — Docker Compose (un comando)
 
 ```bash
 cp .env.example .env
 # Editar JWT_SECRET en .env (openssl rand -base64 48)
-npm install
-```
-
-### 1. Levantar PostgreSQL
-
-```bash
-docker compose up -d postgres   # localhost:5434 (user: eiteck / pass: eiteck_dev_password)
-# o usar un Postgres propio y ajustar DATABASE_URL
-```
-
-### 2. Aplicar esquema y datos de prueba (una vez)
-
-```bash
-npm run build          # genera dist/ que usa el seed
-export DATABASE_URL=postgresql://eiteck:eiteck_dev_password@localhost:5434/eiteck_reservations
-npm run db:migrate     # migraciones 0000–0002
-npm run db:seed        # roles, tipos, usuarios y recursos de prueba
-```
-
-### 3. Levantar la API
-
-**Docker Compose (recomendado):**
-
-```bash
 docker compose up --build
 ```
 
-**Modo dev nativo:**
-
-```bash
-npm run start:dev
-```
-
-Servicios:
+El contenedor de la API aplica **migraciones + seed automáticamente** al
+arrancar (setup idempotente).
 
 - **API**: <http://localhost:3000>
 - **Swagger**: <http://localhost:3000/api/docs>
-- **Postgres**: `localhost:5434`
+- **Postgres**: `localhost:5434` (user: `eiteck` / pass: `eiteck_dev_password`)
 
-> En local el contenedor **no** aplica migraciones ni seed (eso lo hace el
-> `Dockerfile` de producción al arrancar); por eso el paso 2 es manual. En
-> Railway el contenedor migra y siembra automáticamente.
+### Opción B — Dev nativo (sin Docker para la API)
+
+```bash
+cp .env.example .env
+npm install
+docker compose up -d postgres       # o un Postgres propio
+export DATABASE_URL=postgresql://eiteck:eiteck_dev_password@localhost:5434/eiteck_reservations
+npm run build                       # genera dist/ que usa el seed
+npm run db:migrate                  # migraciones 0000–0002
+npm run db:seed                     # roles, tipos, usuarios y recursos
+npm run start:dev
+```
+
+> El setup de DB es idempotente: alcanza con correrlo una vez. En producción
+> (Railway) el contenedor también migra y siembra solo al arrancar.
 
 ## Variables de entorno
 

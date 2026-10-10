@@ -10,4 +10,7 @@ COPY tsconfig.json tsconfig.build.json nest-cli.json ./
 
 EXPOSE 3000
 
-CMD ["npm", "run", "start:dev"]
+# Al arrancar: aplica migraciones y seed (idempotente) y luego levanta la API
+# en modo watch. El seed se ejecuta con ts-node porque en desarrollo no hay
+# dist/ compilado. Requiere el volumen de ./src y ./scripts (ver docker-compose).
+CMD ["sh", "-c", "node scripts/run-migrations.js && npx ts-node src/data/seeds/initial-seed.ts && npm run start:dev"]
